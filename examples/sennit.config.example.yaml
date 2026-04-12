@@ -1,0 +1,12 @@
+# Sennit (mcp-parallel) — example config
+version: 1
+servers:
+  # docs:
+  #   transport: stdio
+  #   command: npx
+  #   args: ["-y", "@some/mcp-server"]
+  #   tools: ["search", "fetch"]   # optional allowlist; omit = all tools
+  mock:
+    transport: stdio
+    command: node
+    args: ["dist/fixtures/mock-upstream.js"]
