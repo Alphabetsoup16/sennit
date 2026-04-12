@@ -1,4 +1,6 @@
-# Sennit (`mcp-parallel`)
+# Sennit
+
+npm package: **`mcp-parallel`** (install) · GitHub: **[Alphabetsoup16/sennit](https://github.com/Alphabetsoup16/sennit)**
 
 MCP **aggregator**: stdio upstreams, merged tools as `serverKey__toolName`, and **`sennit.batch_call`** to run many upstream calls in parallel from one host tool.
 

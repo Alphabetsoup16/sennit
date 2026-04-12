@@ -8,7 +8,7 @@
 ## Clone → green
 
 ```bash
-git clone <repo-url> && cd mcp-parallel
+git clone <repo-url> && cd sennit
 npm ci
 npm run validate   # lint + typecheck + test (pretest builds dist/)
 ```

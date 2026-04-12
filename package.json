@@ -10,12 +10,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Alphabetsoup16/mcp-parallel.git"
+    "url": "https://github.com/Alphabetsoup16/sennit.git"
   },
   "bugs": {
-    "url": "https://github.com/Alphabetsoup16/mcp-parallel/issues"
+    "url": "https://github.com/Alphabetsoup16/sennit/issues"
   },
-  "homepage": "https://github.com/Alphabetsoup16/mcp-parallel#readme",
+  "homepage": "https://github.com/Alphabetsoup16/sennit#readme",
   "keywords": [
     "mcp",
     "model-context-protocol",
