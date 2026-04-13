@@ -15,7 +15,7 @@ export function registerConfigPrint(parent: Command): void {
   parent
     .command("print")
     .description(
-      "Print effective config with secrets redacted (YAML or --json); use --empty for schema default",
+      "Print effective config with selective redaction (YAML or --json); use --empty for schema default. Redacts: servers.*.env values and roots.allowUriPrefixes. Does not redact command args, cwd, or other fields—review before sharing.",
     )
     .option(OPT_CONFIG_PATH, DESC_CONFIG_PATH_RESOLVE)
     .option("--empty", "Print empty schema default (ignore -c / resolution)")

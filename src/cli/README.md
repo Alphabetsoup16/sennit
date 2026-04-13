@@ -1,26 +1,28 @@
 # `src/cli`
 
-Entry for **`npx sennit`** (npm package **`sennit`**): a small root ([`index.ts`](index.ts)) plus command registration ([`register-commands.ts`](register-commands.ts)).
+**`npx sennit`**: thin [`index.ts`](index.ts) + [`register-commands.ts`](register-commands.ts). Subcommands live in [`commands/`](commands/README.md).
 
-## Layout
+## Files
 
-| File / folder | Role |
-|---------------|------|
-| **`index.ts`** | Root `Command`, `--version`, `parseAsync` |
-| **`register-commands.ts`** | Imports **`register*`** from **`commands/`** |
-| **`commands/`** | One module per subcommand — [commands/README.md](commands/README.md) |
-| **`user-sennit-paths.ts`** | Default per-user **`config.yaml`** directory (XDG / macOS / Windows) |
-| **`import-host-mcp.ts`** | Parse Cursor-style **`mcp.json`** → Sennit **`servers`** (stdio only) |
-| **`config-redact.ts`** | Clone config and redact **`servers.*.env`** for **`config print`** |
-| **`inspect-upstreams.ts`** | **`runDoctorInspect`** — shared logic for **`doctor inspect`** |
-| **`plan-run.ts`** | **`runPlan`** / **`planOverallOk`** — orchestration for **`sennit plan`** |
-| **`parse-timeout-ms.ts`** | **`parsePositiveTimeoutMs`**, **`parseRequiredPositiveMs`**, default timeout constant |
-| **`main-module.ts`** | **`isMainModule(import.meta.url)`** so the CLI file can be imported without side effects |
-| **`cli-shared-options.ts`** | Shared **`-c` / `--json` / `--timeout`** flags and help text for Commander |
-| **`paths.ts`** | Resolve config path: flag → env → default filenames |
+| Path | Role |
+|------|------|
+| **`index.ts`** | Root **`Command`**, **`--version`**, **`parseAsync`** |
+| **`register-commands.ts`** | Wires **`register*`** from **`commands/`** |
+| **`commands/`** | One module per subcommand |
+| **`paths.ts`** | Config path: flag → **`SENNIT_CONFIG`** → cwd files → user default |
+| **`user-sennit-paths.ts`** | Per-user **`config.yaml`** dir (XDG / macOS / Windows) |
 | **`load-config.ts`** | **`loadSennitConfig`**, **`tryLoadSennitConfig`**, **`EMPTY_CONFIG`** |
-| **`print.ts`** | **`printJson`**, **`cliJsonOrHuman`** for CLI output |
+| **`import-host-mcp.ts`** | Cursor-style **`mcp.json`** → **`servers`** (stdio) |
+| **`config-redact.ts`** | **`redactSennitConfig`**: **`servers.*.env`** + **`roots.allowUriPrefixes`** |
+| **`inspect-upstreams.ts`** | **`runDoctorInspect`** |
+| **`plan-run.ts`** | **`runPlan`**, **`planOverallOk`** |
+| **`parse-timeout-ms.ts`** | Timeout parsing + defaults |
+| **`cli-shared-options.ts`** | Shared **`-c` / `--json` / `--timeout`** help text |
+| **`print.ts`** | **`printJson`**, **`cliJsonOrHuman`** |
+| **`main-module.ts`** | **`isMainModule(import.meta.url)`** for test imports |
 
-Config only **loads** YAML/JSON from disk; it does **not** discover MCP servers automatically—you list each upstream under **`servers`**. See the root [README.md](../../README.md) section on discovery.
+**`enablePositionalOptions()`** so **`doctor inspect -c path`** binds **`-c`** to **`inspect`**.
+
+Config load does not discover servers — only **`servers`** in YAML/JSON. See root [README.md](../../README.md).
 
 **Extend:** [docs/EXTENDING.md](../../docs/EXTENDING.md).

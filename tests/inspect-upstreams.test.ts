@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
+import type { UpstreamHubConnectOptions } from "../src/aggregator/upstream-hub.js";
 import { UpstreamHub } from "../src/aggregator/upstream-hub.js";
 import { runDoctorInspect } from "../src/cli/inspect-upstreams.js";
 import type { SennitConfig } from "../src/config/schema.js";
 import { sennitConfigSchema } from "../src/config/schema.js";
 
 class NeverFinishesConnectHub extends UpstreamHub {
-  override async connect(_config: SennitConfig): Promise<void> {
+  override async connect(
+    _config: SennitConfig,
+    _options?: UpstreamHubConnectOptions,
+  ): Promise<void> {
     await new Promise<void>(() => {});
   }
 }

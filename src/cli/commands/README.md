@@ -1,38 +1,38 @@
 # `src/cli/commands`
 
-Each file exports **`register*(program)`** (or **`register*(parent)`** for nested groups), wired from [`register-commands.ts`](../register-commands.ts).
+Each module exports **`register*(program)`** or **`register*(parent)`**; wire from [`register-commands.ts`](../register-commands.ts).
 
-## Command inventory
+## Commands
 
-| Command | Role | Typical flags |
-|---------|------|-----------------|
+| Command | Purpose | Flags |
+|---------|---------|-------|
 | **`version`** | Package + Node version | `--json` |
-| **`serve`** | Run aggregator MCP server on stdio | `-c` |
-| **`plan`** | Dry-run: redacted config + upstream **`tools/list`** + merged catalog | `-c`, `--json`, `--timeout` |
-| **`doctor`** | Static env + config validity + **`roots`** summary | `-c`, `--json` |
-| **`doctor inspect`** | Live per-upstream **`tools/list`** | `-c`, `--json`, `--timeout` |
-| **`config path`** | Print default user **`config.yaml`** path | — |
-| **`config validate`** | Validate an explicit config file | **`-c` (required)**, `--json` |
-| **`config print`** | Effective config (redacted); empty template: **`--empty`** | `-c`, **`--empty`**, `--json` |
-| **`setup`** | Create / import user config | `--from`, `-o`, `-f` |
-| **`onboard`** | Paste-ready host **`mcp.json`** snippet | `-c` |
+| **`serve`** | Aggregator MCP on stdio | `-c` |
+| **`plan`** | Dry-run: redacted config, per-upstream lists, merged tools + resources | `-c`, `--json`, `--timeout` |
+| **`doctor`** | Env, config validity, **`roots`** summary | `-c`, `--json` |
+| **`doctor inspect`** | Live **`tools/list`** + **`resources/list`** per upstream | `-c`, `--json`, `--timeout` |
+| **`config path`** | Default user **`config.yaml`** path | — |
+| **`config validate`** | Validate file | **`-c`**, `--json` |
+| **`config print`** | Effective config (redacted); **`--empty`** = schema default | `-c`, `--empty`, `--json` |
+| **`config schema`** | JSON Schema (Zod → draft-7) | `--wrap` |
+| **`setup`** | Create / import config | `--from`, `-o`, `-f` |
+| **`onboard`** | Host **`mcp.json`** snippet | `-c` |
+| **`completion`** | **`bash`** \| **`zsh`** \| **`fish`** script | `<shell>` |
+| **`call`** | One **`tools/call`** via in-memory session | `<tool>`, `-c`, `--args`, `--json` |
 
-The MCP tool **`sennit.meta`** (on the aggregator) is separate from the CLI — use **`sennit plan`** or **`config print`** for operator views.
+**`sennit.meta`** is an MCP tool on the server, not a CLI command — use **`plan`** or **`config print`** for operator views.
 
-Root: **`help [command]`** ([`index.ts`](../index.ts)), **`-V` / `--version`**, **`enablePositionalOptions()`** so flags after subcommands bind correctly (e.g. **`doctor inspect -c file.yaml`**).
+**Positional options:** [`../index.ts`](../index.ts) enables Commander **`enablePositionalOptions()`** (flags after the subcommand name apply to that subcommand).
 
-Shared option strings: [`cli-shared-options.ts`](../cli-shared-options.ts).
+Shared strings: [`../cli-shared-options.ts`](../cli-shared-options.ts). JSON/human split: [`../print.ts`](../print.ts) **`cliJsonOrHuman`**.
 
-## Design notes
+## Conventions
 
-| Topic | Choice |
-|-------|--------|
-| **`doctor` vs `doctor inspect`** | Subcommand for clarity and completion. |
-| **`plan` vs `doctor inspect`** | Top-level **`plan`** for full dry-run (merged catalog). |
-| **`config` subcommands** | **`path`**, **`validate`**, **`print`** instead of one overloaded command. |
-| **Default config path** | Only **`sennit config path`** — no duplicate flag on **`setup`**. |
-| **Empty schema JSON** | **`sennit config print --empty --json`** (wrapped payload with **`schemaVersion`**). |
+| Topic | Rule |
+|-------|------|
+| **`doctor` vs `doctor inspect`** | Static vs live upstream probes |
+| **`plan`** | Full merged view; **`doctor inspect`** = raw per-upstream only |
+| **`config`** | Split subcommands, not one overloaded command |
+| **Default path** | **`sennit config path`** only (not duplicated on **`setup`**) |
 
-**`--json`:** use **`cliJsonOrHuman`** from [`print.ts`](../print.ts) where applicable.
-
-**Add a command:** new file + **`register-commands`** import; reuse **`cli-shared-options.ts`** for **`-c` / `--json` / `--timeout`** when it fits.
+**New command:** add **`register*.ts`**, import in **`register-commands.ts`**, mirror **`-c` / `--json` / `--timeout`** from **`cli-shared-options.ts`** when it fits.

@@ -1,6 +1,9 @@
 import type { Command } from "commander";
+import { registerCall } from "./commands/call.js";
+import { registerCompletion } from "./commands/completion.js";
 import { registerConfigPath } from "./commands/config-path.js";
 import { registerConfigPrint } from "./commands/config-print.js";
+import { registerConfigSchema } from "./commands/config-schema.js";
 import { registerConfigValidate } from "./commands/config-validate.js";
 import { registerDoctor } from "./commands/doctor.js";
 import { registerOnboard } from "./commands/onboard.js";
@@ -23,7 +26,10 @@ export function registerAllCommands(program: Command): void {
   registerConfigPath(config);
   registerConfigValidate(config);
   registerConfigPrint(config);
+  registerConfigSchema(config);
 
   registerSetup(program);
   registerOnboard(program);
+  registerCompletion(program);
+  registerCall(program);
 }

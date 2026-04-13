@@ -2,7 +2,7 @@ import type { SennitConfig } from "../config/schema.js";
 
 export const REDACTED_VALUE = "[redacted]";
 
-/** Deep clone and replace every `servers.*.env` value for safe printing. */
+/** Deep clone; redact `servers.*.env` values and `roots.allowUriPrefixes` for safe printing. */
 export function redactSennitConfig(config: SennitConfig): SennitConfig {
   const next = structuredClone(config);
   for (const server of Object.values(next.servers)) {

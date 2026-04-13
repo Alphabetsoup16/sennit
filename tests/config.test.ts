@@ -47,9 +47,36 @@ describe("sennitConfigSchema", () => {
       }),
     ).toThrow(/server key must not contain/);
   });
+
+  it("accepts optional servers.*.resources allowlist", () => {
+    const c = sennitConfigSchema.parse({
+      version: 1,
+      servers: {
+        a: {
+          transport: "stdio",
+          command: "node",
+          resources: ["file:///x"],
+        },
+      },
+    });
+    expect(c.servers.a.resources).toEqual(["file:///x"]);
+  });
 });
 
 describe("tryLoadSennitConfig", () => {
+  it("returns config when valid (single parse)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "sennit-tryload-"));
+    const path = join(dir, "ok.yaml");
+    writeFileSync(path, "version: 1\nservers: {}\n", "utf8");
+    const r = tryLoadSennitConfig(path);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.config.version).toBe(1);
+      expect(r.config.servers).toEqual({});
+    }
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it("returns error for invalid JSON", () => {
     const dir = mkdtempSync(join(tmpdir(), "sennit-bad-"));
     const path = join(dir, "bad.json");

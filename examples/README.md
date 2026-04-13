@@ -2,12 +2,11 @@
 
 | File | Purpose |
 |------|---------|
-| **`sennit.config.example.yaml`** | Minimal **`servers.mock`** entry: **`node`** + **`dist/fixtures/mock-upstream.js`** |
-
-Run **`npm run build`** first so the mock fixture exists under **`dist/`**.
+| **`sennit.config.example.yaml`** | Sample **`servers.mock`** → **`node dist/fixtures/mock-upstream.js`** |
 
 ```bash
-npx sennit serve --config examples/sennit.config.example.yaml
+npm run build
+npx sennit serve -c examples/sennit.config.example.yaml
 ```
 
-Use this as a template: copy the file, replace **`command` / `args`** with your real upstream MCP servers, and optionally set **`tools`** per server to restrict which upstream tools appear as **`key__name`** on Sennit.
+Copy and edit: set your real **`command`** / **`args`**, optional **`tools`** / **`resources`** per server.

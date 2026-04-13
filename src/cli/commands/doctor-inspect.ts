@@ -1,5 +1,4 @@
 import type { Command } from "commander";
-import { errorMessage } from "../../lib/error-message.js";
 import {
   DESC_CONFIG_PATH_RESOLVE,
   DESC_JSON,
@@ -8,12 +7,11 @@ import {
   OPT_JSON,
   OPT_TIMEOUT_MS,
 } from "../cli-shared-options.js";
+import { tryParseDoctorInspectTimeout } from "../cli-timeout.js";
+import { formatInspectUpstreamsHumanLines } from "../format-inspect-upstreams.js";
 import { loadSennitConfig } from "../load-config.js";
 import { runDoctorInspect } from "../inspect-upstreams.js";
-import {
-  DEFAULT_DOCTOR_INSPECT_TIMEOUT_MS,
-  parseRequiredPositiveMs,
-} from "../parse-timeout-ms.js";
+import { DEFAULT_DOCTOR_INSPECT_TIMEOUT_MS } from "../parse-timeout-ms.js";
 import { cliJsonOrHuman } from "../print.js";
 import { resolveConfigPath } from "../paths.js";
 
@@ -21,7 +19,7 @@ export function registerDoctorInspect(doctor: Command): void {
   doctor
     .command("inspect")
     .description(
-      "Connect to each stdio upstream and run MCP tools/list (live; use for debugging)",
+      "Connect to each stdio upstream and run MCP tools/list plus resources/list when supported (live debugging)",
     )
     .option(OPT_CONFIG_PATH, DESC_CONFIG_PATH_RESOLVE)
     .option(OPT_JSON, DESC_JSON)
@@ -31,15 +29,13 @@ export function registerDoctorInspect(doctor: Command): void {
       String(DEFAULT_DOCTOR_INSPECT_TIMEOUT_MS),
     )
     .action(async (opts: { config?: string; json?: boolean; timeout: string }) => {
-      let timeoutMs: number;
-      try {
-        timeoutMs = parseRequiredPositiveMs(opts.timeout, "--timeout");
-      } catch (e) {
-        const msg = errorMessage(e);
-        process.stderr.write(`${msg}\n`);
+      const parsed = tryParseDoctorInspectTimeout(opts.timeout);
+      if (!parsed.ok) {
+        process.stderr.write(`${parsed.message}\n`);
         process.exitCode = 1;
         return;
       }
+      const timeoutMs = parsed.ms;
 
       const resolved = resolveConfigPath(opts.config);
       const config = loadSennitConfig(resolved);
@@ -52,20 +48,10 @@ export function registerDoctorInspect(doctor: Command): void {
         writeHuman: () => {
           process.stdout.write("Sennit doctor inspect\n");
           process.stdout.write(`  config: ${resolved ?? "(none — empty servers)"}\n`);
-          if (result.fatalError) {
-            process.stdout.write(`  fatal: ${result.fatalError}\n`);
-          }
-          for (const u of result.upstreams) {
-            if (u.ok) {
-              process.stdout.write(
-                `  ${u.serverKey}: ok (${u.toolCount ?? 0} tools) — ${(u.toolNames ?? []).join(", ") || "(none)"}\n`,
-              );
-            } else {
-              process.stdout.write(`  ${u.serverKey}: error — ${u.error ?? "unknown"}\n`);
-            }
-          }
-          if (result.upstreams.length === 0 && !result.fatalError) {
-            process.stdout.write("  (no upstream servers configured)\n");
+          for (const line of formatInspectUpstreamsHumanLines(result.upstreams, {
+            fatalError: result.fatalError,
+          })) {
+            process.stdout.write(`${line}\n`);
           }
           process.stdout.write(`  status: ${effectiveOk ? "ok" : "issues found"}\n`);
         },

@@ -26,6 +26,7 @@ describe("CLI doctor inspect", () => {
         expect(code).toBe(0);
         expect(stdout).toContain("mock:");
         expect(stdout).toMatch(/mock\.ping/);
+        expect(stdout).toMatch(/1 resources/);
       },
     );
   });

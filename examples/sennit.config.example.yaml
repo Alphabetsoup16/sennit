@@ -1,6 +1,6 @@
 # Sennit — example config (npm package: sennit)
 version: 1
-# Optional: how upstream MCP servers see workspace roots (see docs/PASSTHROUGH-AND-MERGE.md).
+# Optional: how upstream MCP servers see workspace roots (modes: ignore | forward | intersect — see root README).
 # roots:
 #   mode: ignore        # ignore | forward | intersect (default when omitted: ignore)
 #   allowUriPrefixes:   # required for intersect — roots whose uri starts with one of these
@@ -11,6 +11,7 @@ servers:
   #   command: npx
   #   args: ["-y", "@some/mcp-server"]
   #   tools: ["search", "fetch"]   # optional allowlist; omit = all tools
+  #   resources: ["file:///mock/readme.md"]   # optional; exact upstream URIs from resources/list
   mock:
     transport: stdio
     command: node

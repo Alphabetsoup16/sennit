@@ -8,16 +8,28 @@ import type { SennitConfig } from "../config/schema.js";
 import { applyRootsPolicy } from "./roots-policy.js";
 import type { UpstreamRootsBridge } from "./roots-bridge.js";
 
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) {
+    throw new DOMException("connect aborted", "AbortError");
+  }
+}
+
+export type UpstreamHubConnectOptions = {
+  signal?: AbortSignal;
+};
+
 /** Manages one MCP `Client` per configured upstream (stdio). */
 export class UpstreamHub {
   private readonly clients = new Map<string, Client>();
 
   constructor(private readonly rootsBridge?: UpstreamRootsBridge) {}
 
-  async connect(config: SennitConfig): Promise<void> {
+  async connect(config: SennitConfig, options?: UpstreamHubConnectOptions): Promise<void> {
+    const signal = options?.signal;
     try {
       const baseEnv = getDefaultEnvironment();
       for (const [key, srv] of Object.entries(config.servers)) {
+        throwIfAborted(signal);
         const transport = new StdioClientTransport({
           command: srv.command,
           args: srv.args ?? [],
@@ -32,6 +44,7 @@ export class UpstreamHub {
           },
         );
         await client.connect(transport);
+        throwIfAborted(signal);
         if (this.rootsBridge) {
           const bridge = this.rootsBridge;
           client.setRequestHandler(ListRootsRequestSchema, async () => ({

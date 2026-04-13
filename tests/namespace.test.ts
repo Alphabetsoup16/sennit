@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { namespacedToolName, parseNamespaced } from "../src/lib/namespace.js";
+import {
+  namespacedToolName,
+  parseNamespaced,
+  takeUniqueMergedToolId,
+} from "../src/lib/namespace.js";
 
 describe("namespace", () => {
   it("joins and splits", () => {
@@ -29,5 +33,11 @@ describe("namespace", () => {
 
   it("parseNamespaced rejects empty server segment", () => {
     expect(() => parseNamespaced("__tool")).toThrow(/invalid namespaced/);
+  });
+
+  it("takeUniqueMergedToolId rejects duplicate merged ids", () => {
+    const seen = new Set<string>();
+    expect(takeUniqueMergedToolId(seen, "a", "t")).toBe("a__t");
+    expect(() => takeUniqueMergedToolId(seen, "a", "t")).toThrow(/duplicate namespaced tool/);
   });
 });

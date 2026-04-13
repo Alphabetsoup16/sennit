@@ -9,10 +9,12 @@ export {
   type StdioServerConfig,
 } from "./config/schema.js";
 export { errorMessage } from "./lib/error-message.js";
+export { BATCH_CALL_MAX_ITEMS } from "./lib/limits.js";
 export { jsonText } from "./lib/json-text.js";
 export {
   namespacedToolName,
   parseNamespaced,
+  takeUniqueMergedToolId,
   TOOL_NAMESPACE_SEPARATOR,
 } from "./lib/namespace.js";
 export { VERSION } from "./lib/version.js";

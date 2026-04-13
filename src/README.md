@@ -1,30 +1,43 @@
 # `src/`
 
-TypeScript source for **Sennit** (npm package **`sennit`**). The published surface is the built **`dist/`** tree; run **`npm run build`** before packaging or running tests that spawn `dist/fixtures/`.
+TypeScript for package **`sennit`**. Published output is **`dist/`** — run **`npm run build`** before **`npm pack`** or tests that spawn **`dist/fixtures/`**.
 
 ```mermaid
 flowchart LR
-  cli[cli] --> agg[aggregator]
-  idx[index.ts] --> agg
-  agg --> hub[upstream-hub]
-  agg --> batch[batch]
-  cli --> cfg[config/load]
+  subgraph entry [Entrypoints]
+    cli[cli]
+    idx[index.ts]
+  end
+
+  subgraph core [Core]
+    agg[aggregator]
+    cfg[config]
+  end
+
+  subgraph support [Shared]
+    lib[lib]
+  end
+
+  cli --> agg
+  cli --> cfg
+  idx --> agg
+  agg --> cfg
+  agg --> lib
+  cli --> lib
 ```
 
-## Packages of responsibility
+## Layout
 
-| Directory | Responsibility |
-|-----------|----------------|
-| **`aggregator/`** | `createAggregator`: MCP server, upstream `Client`s, merged `tools/list`, `sennit.batch_call` |
-| **`cli/`** | **`sennit`** CLI binary: subcommands, config path resolution, onboarding helpers |
-| **`config/`** | Zod schema + YAML/JSON load for `servers` |
-| **`lib/`** | Pure helpers: namespacing, version string, JSON text for tool responses |
-| **`fixtures/`** | Mock stdio MCP subprocess used by tests (not part of runtime aggregator logic) |
+| Directory | Role |
+|-----------|------|
+| **`aggregator/`** | **`createAggregator`**: **`McpServer`**, **`UpstreamHub`**, tool + resource proxies, **`sennit.batch_call`** |
+| **`cli/`** | **`sennit`** binary: subcommands, config resolution, onboarding |
+| **`config/`** | Zod schema; YAML/JSON load |
+| **`lib/`** | Pure helpers (namespace, version, JSON text, errors) |
+| **`fixtures/`** | Mock stdio MCP server for tests only |
 
-## How tools get onto the Sennit server
+Upstreams come **only** from **`config.servers`**. At startup the aggregator calls **`tools/list`** (and **`resources/list`**) per client, then registers **`serverKey__name`** entries. See root [README.md](../README.md).
 
-There is **no** filesystem or host-app scan. Upstreams are **only** those listed under `config.servers`. At aggregator startup, Sennit connects to each and uses MCP **`tools/list`** to learn tool names, then registers **`serverKey__toolName`** proxies (see root README for the full mental model).
+**Published API:** `import { createAggregator, … } from "sennit"` (from build).
 
-**Public API:** `import { createAggregator, … } from "sennit"` from the published build.
-
-**Extend the codebase:** [docs/EXTENDING.md](../docs/EXTENDING.md).
+**Contributing:** [docs/EXTENDING.md](../docs/EXTENDING.md).

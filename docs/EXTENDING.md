@@ -2,7 +2,7 @@
 
 Where to plug in new behavior so the codebase stays predictable.
 
-For **multi-capability passthrough** (tools, resources, prompts, **roots**, notifications) and **merge policy** expectations, read [**PASSTHROUGH-AND-MERGE.md**](PASSTHROUGH-AND-MERGE.md) first so new code matches the documented contract.
+For **multi-capability passthrough** (tools, resources, prompts, **roots**, notifications) and **merge policy** expectations, maintainers keep the living contract in **`private-docs/PASSTHROUGH-AND-MERGE.md`** (gitignored — see [`private-docs/README.md`](../private-docs/README.md)).
 
 ## Add a CLI subcommand
 
@@ -29,7 +29,7 @@ Today only **stdio** exists in [`src/aggregator/upstream-hub.ts`](../src/aggrega
 
 ## Add a built-in MCP tool (on the aggregator)
 
-Edit [`src/aggregator/build-server.ts`](../src/aggregator/build-server.ts): call `mcp.registerTool(...)` **before** or **after** the upstream proxy loop as appropriate, and avoid colliding with `serverKey__` names unless intentional.
+Edit [`src/aggregator/pipeline.ts`](../src/aggregator/pipeline.ts) (registered from [`build-server.ts`](../src/aggregator/build-server.ts) re-exports): add `mcp.registerTool(...)` in **`registerAggregatorSurface`** (or earlier in the pipeline) so it does not collide with `serverKey__` proxies unless intentional.
 
 ## Add library exports
 

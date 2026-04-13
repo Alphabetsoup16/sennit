@@ -26,3 +26,20 @@ export function parseNamespaced(namespaced: string): { serverKey: string; toolNa
     toolName: namespaced.slice(i + TOOL_NAMESPACE_SEPARATOR.length),
   };
 }
+
+/**
+ * Reserves a merged host-facing tool id for `serverKey` + `toolName`.
+ * @throws if the same namespaced id was already taken (upstream duplicate tool names).
+ */
+export function takeUniqueMergedToolId(
+  seen: Set<string>,
+  serverKey: string,
+  toolName: string,
+): string {
+  const full = namespacedToolName(serverKey, toolName);
+  if (seen.has(full)) {
+    throw new Error(`duplicate namespaced tool after merge: ${full}`);
+  }
+  seen.add(full);
+  return full;
+}

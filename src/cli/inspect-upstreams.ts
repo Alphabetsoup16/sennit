@@ -1,22 +1,10 @@
+import type { DoctorInspectResult } from "../aggregator/doctor-inspect-types.js";
+import { doctorInspectResultFromProbeRows, probeConnectedHub } from "../aggregator/upstream-probe.js";
 import { UpstreamHub } from "../aggregator/upstream-hub.js";
 import type { SennitConfig } from "../config/schema.js";
 import { errorMessage } from "../lib/error-message.js";
 
-export type DoctorInspectUpstream = {
-  serverKey: string;
-  ok: boolean;
-  error?: string;
-  toolCount?: number;
-  toolNames?: string[];
-};
-
-export type DoctorInspectResult = {
-  schemaVersion: 1;
-  ok: boolean;
-  /** Set when connect or overall deadline fails (not per-upstream list errors). */
-  fatalError?: string;
-  upstreams: DoctorInspectUpstream[];
-};
+export type { DoctorInspectResult, DoctorInspectUpstream } from "../aggregator/doctor-inspect-types.js";
 
 export type RunDoctorInspectOptions = {
   /** Injected hub (e.g. tests); default is a new {@link UpstreamHub}. */
@@ -25,7 +13,9 @@ export type RunDoctorInspectOptions = {
 
 /**
  * Connect all stdio upstreams, run MCP `tools/list` per server (in parallel), then close.
- * Enforces an overall wall-clock timeout (best-effort: in-flight work may continue briefly).
+ * Best-effort `resources/list` per upstream (ignored when unsupported).
+ * Enforces an overall wall-clock timeout. Further upstream spawns are aborted once the deadline
+ * passes; a single in-flight `client.connect` may still run until `hub.close()` in `finally`.
  */
 export async function runDoctorInspect(
   config: SennitConfig,
@@ -34,31 +24,17 @@ export async function runDoctorInspect(
 ): Promise<DoctorInspectResult> {
   const hub = options?.hub ?? new UpstreamHub();
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const ac = new AbortController();
 
-  const work = async (): Promise<DoctorInspectResult> => {
-    await hub.connect(config);
-    const upstreams: DoctorInspectUpstream[] = await Promise.all(
-      hub.entries().map(async ([serverKey, client]) => {
-        try {
-          const { tools } = await client.listTools();
-          const toolNames = tools.map((t) => t.name);
-          return {
-            serverKey,
-            ok: true,
-            toolCount: toolNames.length,
-            toolNames,
-          };
-        } catch (e) {
-          return { serverKey, ok: false, error: errorMessage(e) };
-        }
-      }),
-    );
-    const ok = upstreams.every((u) => u.ok);
-    return { schemaVersion: 1, ok, upstreams };
+  const work = async () => {
+    await hub.connect(config, { signal: ac.signal });
+    const rows = await probeConnectedHub(hub);
+    return doctorInspectResultFromProbeRows(rows);
   };
 
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
+      ac.abort();
       reject(new Error(`inspect timed out after ${timeoutMs}ms`));
     }, timeoutMs);
   });

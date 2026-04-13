@@ -1,7 +1,7 @@
 # `src/fixtures`
 
-Test-only MCP **stdio** servers. They are **not** imported from production **`aggregator`** or **`cli`** code; tests spawn **`dist/fixtures/*.js`** after **`npm run build`**.
+Test-only stdio MCP servers. Production code does not import them; tests run **`dist/fixtures/*.js`** after **`npm run build`**.
 
 | File | Role |
 |------|------|
-| **`mock-upstream.ts`** | Registers **`mock.ping`** (returns `pong`) and **`mock.echo`** (echoes **`msg`**) for integration tests |
+| **`mock-upstream.ts`** | Tools **`mock.ping`**, **`mock.echo`**; resource **`mock.readme`** at **`file:///mock/readme.md`** |

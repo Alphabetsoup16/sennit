@@ -1,39 +1,55 @@
 # `src/aggregator`
 
-The **Sennit MCP server**: one **`McpServer`** facing the host, **`UpstreamHub`** holding one MCP **`Client`** per configured stdio upstream, plus **`executeBatchCall`** for **`sennit.batch_call`**.
+Host-facing **`McpServer`** plus **`UpstreamHub`** (one MCP **`Client`** per **`servers`** entry, stdio today). Implements **`sennit.meta`**, **`sennit.batch_call`**, namespaced tool proxies, and merged static resources.
 
 ```mermaid
 flowchart TB
-  host[Host]
-  sennit[sennit McpServer]
-  hub[UpstreamHub]
-  host <-->|stdio| sennit
-  sennit --> hub
-  hub --> u1[stdio upstream]
-  hub --> u2[stdio upstream]
+  host[Mcp_host]
+
+  subgraph facade [Sennit_McpServer]
+    mcp[McpServer_surface]
+  end
+
+  subgraph hub [UpstreamHub]
+    c1[Client_A]
+    c2[Client_B]
+  end
+
+  p1[Upstream_A]
+  p2[Upstream_B]
+
+  host <-->|stdio| mcp
+  mcp --> c1
+  mcp --> c2
+  c1 <-->|stdio| p1
+  c2 <-->|stdio| p2
 ```
 
 ## Files
 
 | File | Role |
 |------|------|
-| **`upstream-hub.ts`** | `StdioClientTransport` + `Client` per `servers` entry; optional **`roots/list`** handler toward upstreams |
-| **`roots-policy.ts`** | `applyRootsPolicy` — **ignore** / **forward** / **intersect** |
-| **`roots-bridge.ts`** | `makeUpstreamRootsBridge` — host `listRoots` → upstream responses |
-| **`batch.ts`** | Parallel `client.callTool` for **`sennit.batch_call`** |
-| **`proxy-input-schema.ts`** | **`proxyToolInputSchema`**, shared **`looseToolArgumentsSchema`** — map upstream JSON Schema to Zod for **`registerTool`**; fall back to a permissive record when unknown |
-| **`build-server.ts`** | **`createAggregator(config)`**: connect hub, register meta + batch + namespaced proxies |
+| **`build-server.ts`** | Re-exports **`createAggregator`** and related entrypoints |
+| **`pipeline.ts`** | **`createMcpAndHub`**, **`registerAggregatorSurface`**, **`createAggregator`** wiring |
+| **`upstream-probe.ts`**, **`doctor-inspect-types.ts`** | Shared connect + **`tools/list`** probe (plan / doctor) |
+| **`upstream-hub.ts`** | **`StdioClientTransport`** + **`Client`** per server; optional upstream **`roots/list`** handler |
+| **`roots-policy.ts`** | **`applyRootsPolicy`** — **`ignore`** / **`forward`** / **`intersect`** |
+| **`roots-bridge.ts`** | Host **`listRoots`** → policy → upstream |
+| **`batch.ts`** | **`executeBatchCall`** |
+| **`proxy-input-schema.ts`** | Upstream JSON Schema → Zod for **`registerTool`**; loose fallback |
+| **`list-resources.ts`** | Paginated **`resources/list`** |
+| **`register-resources.ts`** | Merge static resources; **`urn:sennit:resource:v1:…`** façade + **`resources/read`** proxy |
 
-## Tool catalog (built-ins + proxies)
+## Registered surface
 
-| Registered name | Source |
-|-----------------|--------|
-| **`sennit.meta`** | Static |
-| **`sennit.batch_call`** | Static; arguments validated with Zod |
-| **`{serverKey}__{upstreamToolName}`** | One proxy per tool returned by that upstream’s MCP **`tools/list`**, after optional **`servers.<key>.tools`** allowlist |
+| Pattern | Source |
+|---------|--------|
+| **`sennit.meta`**, **`sennit.batch_call`** | Built-in |
+| **`{serverKey}__{tool}`** | After **`servers.<key>.tools`** allowlist (if any) |
+| **`{serverKey}__{resource}`** | After **`servers.<key>.resources`** URI allowlist (if any) |
 
-**Listing upstream tools:** after all transports are connected, Sennit calls **`listTools()`** on each `Client` **in parallel** (`Promise.all` over servers), then registers proxies. It does **not** discover servers beyond the config file.
+**Startup:** **`listTools`** (and resource listing) runs **in parallel** across clients; catalog is **fixed after connect** (no hot reload unless the host reconnects).
 
-**Proxied `inputSchema`:** upstreams expose JSON Schema; Sennit builds Zod for common `type: "object"` + `properties` patterns (string / number / integer / boolean, optional vs `required`). Anything else uses a loose object record so registration always succeeds.
+**`inputSchema`:** common **`object`/`properties`** maps to strict Zod; otherwise permissive object.
 
-**Extend:** e.g. add HTTP/SSE transport beside stdio in **`upstream-hub.ts`**. **Caveat:** if you register new tools after clients have already cached `tools/list`, you need a host that supports list invalidation or reconnect semantics—today the model is “stable catalog after startup.”
+**Next transport:** branch in **`upstream-hub.ts`** (see [docs/EXTENDING.md](../../docs/EXTENDING.md)).

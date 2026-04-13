@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { listAllResources } from "../src/aggregator/list-resources.js";
 import { sennitConfigSchema } from "../src/config/schema.js";
 import { firstTextBlock } from "./mcp-helpers.js";
 import { withInMemoryAggregator } from "./test-utils.js";
@@ -37,6 +38,13 @@ describe("createAggregator (stdio upstream)", () => {
           arguments: {},
         });
         expect(firstTextBlock(ping)).toBe("pong");
+
+        const resources = await listAllResources(client);
+        const readme = resources.find((r) => r.name === "mock__mock.readme");
+        expect(readme?.uri).toMatch(/^urn:sennit:resource:v1:/);
+        const read = await client.readResource({ uri: readme!.uri });
+        const text = read.contents.find((c) => "text" in c) as { text: string } | undefined;
+        expect(text?.text).toContain("# mock");
       },
     );
   });

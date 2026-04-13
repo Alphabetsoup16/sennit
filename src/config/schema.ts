@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { TOOL_NAMESPACE_SEPARATOR } from "../lib/namespace.js";
 
-/** How Sennit answers upstream `roots/list` using the host’s roots (see docs/PASSTHROUGH-AND-MERGE.md). */
+/** How Sennit answers upstream `roots/list` using the host’s roots (maintainer contract: private-docs/PASSTHROUGH-AND-MERGE.md). */
 export const rootsPolicySchema = z.object({
   mode: z.enum(["ignore", "forward", "intersect"]),
   /** Required when `mode` is `intersect`: only roots whose `uri` starts with one of these strings are forwarded. */
@@ -19,6 +19,8 @@ export const stdioServerSchema = z.object({
   cwd: z.string().optional(),
   /** If set, only these upstream tool names are exposed. */
   tools: z.array(z.string()).optional(),
+  /** If set, only static resources whose upstream URI is listed are exposed (exact match). */
+  resources: z.array(z.string()).optional(),
 });
 
 export type StdioServerConfig = z.infer<typeof stdioServerSchema>;

@@ -18,10 +18,9 @@ export function loadSennitConfig(path?: string): SennitConfig {
 
 export function tryLoadSennitConfig(
   path: string,
-): { ok: true } | { ok: false; error: string } {
+): { ok: true; config: SennitConfig } | { ok: false; error: string } {
   try {
-    loadSennitConfig(path);
-    return { ok: true };
+    return { ok: true, config: loadSennitConfig(path) };
   } catch (e) {
     return {
       ok: false,

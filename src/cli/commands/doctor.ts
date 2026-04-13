@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import type { Command } from "commander";
 import { VERSION } from "../../lib/version.js";
-import { loadSennitConfig, tryLoadSennitConfig } from "../load-config.js";
+import { tryLoadSennitConfig } from "../load-config.js";
 import { cliJsonOrHuman } from "../print.js";
 import { resolveConfigPath } from "../paths.js";
 import { defaultUserSennitConfigFile } from "../user-sennit-paths.js";
@@ -27,10 +27,9 @@ export function registerDoctor(program: Command): void {
         const r = tryLoadSennitConfig(resolved);
         configLoaded = r.ok;
         if (r.ok) {
-          const cfg = loadSennitConfig(resolved);
           rootsSummary = {
-            mode: cfg.roots.mode,
-            allowUriPrefixCount: cfg.roots.allowUriPrefixes?.length ?? 0,
+            mode: r.config.roots.mode,
+            allowUriPrefixCount: r.config.roots.allowUriPrefixes?.length ?? 0,
           };
         } else {
           configError = r.error;

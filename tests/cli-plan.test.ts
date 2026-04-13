@@ -21,6 +21,8 @@ describe("CLI plan", () => {
         expect(stdout).toContain("Upstream reachability");
         expect(stdout).toContain("Merged tool catalog");
         expect(stdout).toContain("mock__mock.ping");
+        expect(stdout).toContain("mock__mock.readme");
+        expect(stdout).toMatch(/1 resources/);
         expect(stdout).toMatch(/status:\s*ok/);
       },
     );
@@ -35,11 +37,13 @@ describe("CLI plan", () => {
         const j = JSON.parse(stdout) as {
           schemaVersion: number;
           mergedTools: Array<{ name: string }>;
+          mergedResources: Array<{ name: string; uri: string }>;
           inspect: { upstreams: unknown[] };
         };
         expect(j.schemaVersion).toBe(1);
         expect(j.inspect.upstreams).toEqual([]);
         expect(j.mergedTools.map((t) => t.name)).toContain("sennit.batch_call");
+        expect(j.mergedResources).toEqual([]);
       },
     );
   });

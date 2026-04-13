@@ -1,11 +1,14 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Root } from "@modelcontextprotocol/sdk/types.js";
 import type { RootsPolicy, SennitConfig } from "../config/schema.js";
+import { errorMessage } from "../lib/error-message.js";
 
 /** Bridges host roots into upstream-facing `roots/list` responses (see `UpstreamHub`). */
 export type UpstreamRootsBridge = {
   policy: RootsPolicy;
   getHostRoots: () => Promise<Root[]>;
+  /** After a failed host `listRoots`, holds `Error#message` (cleared on success). */
+  lastHostRootsError?: string;
 };
 
 /**
@@ -21,15 +24,18 @@ export function makeUpstreamRootsBridge(
   if (policy.mode === "ignore") {
     return undefined;
   }
-  return {
+  const bridge: UpstreamRootsBridge = {
     policy,
     getHostRoots: async () => {
+      bridge.lastHostRootsError = undefined;
       try {
         const r = await mcp.server.listRoots();
         return r.roots ?? [];
-      } catch {
+      } catch (e) {
+        bridge.lastHostRootsError = errorMessage(e);
         return [];
       }
     },
   };
+  return bridge;
 }

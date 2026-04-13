@@ -2,15 +2,12 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Command } from "commander";
 import YAML from "yaml";
-import { sennitConfigSchema, type SennitConfig } from "../../config/schema.js";
+import type { SennitConfig } from "../../config/schema.js";
+import { sennitConfigSchema } from "../../config/schema.js";
 import { errorMessage } from "../../lib/error-message.js";
+import { EMPTY_CONFIG } from "../load-config.js";
 import { importStdioServersFromHostMcpJson } from "../import-host-mcp.js";
 import { defaultUserSennitConfigFile } from "../user-sennit-paths.js";
-
-const DEFAULT_TEMPLATE: SennitConfig = sennitConfigSchema.parse({
-  version: 1,
-  servers: {},
-});
 
 export function registerSetup(program: Command): void {
   program
@@ -34,7 +31,7 @@ export function registerSetup(program: Command): void {
           return;
         }
 
-        let config: SennitConfig = DEFAULT_TEMPLATE;
+        let config: SennitConfig = EMPTY_CONFIG;
         const notes: string[] = [];
 
         if (opts.from) {

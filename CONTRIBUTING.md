@@ -17,6 +17,7 @@ npm run validate   # lint + typecheck + test (pretest builds dist/)
 
 - Implementation: [`src/`](src/README.md) (each major folder has its own `README.md`)
 - How to extend: [`docs/EXTENDING.md`](docs/EXTENDING.md)
+- Maintainer-only design docs: [`private-docs/README.md`](private-docs/README.md) (other files in that folder are gitignored)
 - Tests: [`tests/README.md`](tests/README.md)
 - **TypeScript**: `tsconfig.build.json` emits `dist/` from `src/`; root `tsconfig.json` includes `tests/` for ESLint/typecheck (no emit).
 

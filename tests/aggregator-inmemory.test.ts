@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { BATCH_CALL_MAX_ITEMS } from "../src/lib/limits.js";
 import { sennitConfigSchema } from "../src/config/schema.js";
 import { firstTextBlock } from "./mcp-helpers.js";
 import { withInMemoryAggregator } from "./test-utils.js";
@@ -14,8 +15,9 @@ describe("createAggregator (in-memory)", () => {
       const meta = await client.callTool({ name: "sennit.meta", arguments: {} });
       const text = firstTextBlock(meta);
       expect(text).toContain("sennitVersion");
-      const j = JSON.parse(text) as { roots: { mode: string } };
+      const j = JSON.parse(text) as { roots: { mode: string }; resources: string };
       expect(j.roots.mode).toBe("ignore");
+      expect(j.resources).toMatch(/urn:sennit:resource/);
     });
   });
 
@@ -39,6 +41,23 @@ describe("createAggregator (in-memory)", () => {
       }>;
       expect(parsed[0]?.ok).toBe(false);
       expect(parsed[0]?.error).toMatch(/unknown serverKey/);
+    });
+  });
+
+  it("batch_call rejects more than BATCH_CALL_MAX_ITEMS calls", async () => {
+    await withInMemoryAggregator(sennitConfigSchema.parse({ version: 1, servers: {} }), async (client) => {
+      const calls = Array.from({ length: BATCH_CALL_MAX_ITEMS + 1 }, (_, i) => ({
+        serverKey: "nope",
+        toolName: "x",
+        clientCallId: String(i),
+      }));
+      const out = await client.callTool({
+        name: "sennit.batch_call",
+        arguments: { calls },
+      });
+      expect(out).toMatchObject({ isError: true });
+      const text = firstTextBlock(out);
+      expect(text.toLowerCase()).toMatch(/at most|too big/);
     });
   });
 });

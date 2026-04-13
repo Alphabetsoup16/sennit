@@ -1,54 +1,42 @@
 # Sennit
 
-**One MCP server in your host** that fans out to several upstream MCP servers over stdio, merges their tool catalogs with predictable names, and exposes **`sennit.batch_call`** so strict hosts can run many upstream tool calls in parallel.
+One **MCP server** in the host: stdio to **N** upstream MCP servers, merged **`key__tool`** names, built-in **`sennit.batch_call`** for parallel upstream **`tools/call`**.
 
-| Install / run | Source & issues |
-|----------------|------------------|
-| npm: **`sennit`** (`npx sennit`, `npx -y sennit`) | [Alphabetsoup16/sennit](https://github.com/Alphabetsoup16/sennit) |
+| Install | Repo |
+|---------|------|
+| **`npx sennit`** / **`npx -y sennit`** | [Alphabetsoup16/sennit](https://github.com/Alphabetsoup16/sennit) |
 
 ```mermaid
 flowchart TB
-  subgraph host ["Host (IDE, agent, or CLI)"]
-    HST["Single MCP client"]
+  host[MCP_host]
+
+  subgraph sennit [Sennit_single_process]
+    cfg[Config_resolve]
+    hub[UpstreamHub_N_stdio_clients]
+    face[McpServer_tools_resources_batch]
+    cfg --> hub --> face
   end
 
-  subgraph sennit ["Sennit — one serve process"]
-    subgraph cfg ["Config (you declare upstreams)"]
-      RES["Resolve path: flag → SENNIT_CONFIG → cwd → user config.yaml"]
-      SRV["servers.* : stdio command / args / optional tools allowlist"]
-      RES --> SRV
-    end
-    UH["UpstreamHub: spawn each upstream, MCP connect over stdio"]
-    LST["Parallel MCP tools/list per upstream"]
-    REG["Register sennit.meta, sennit.batch_call, key__upstreamTool proxies"]
-    SRV --> UH
-    UH --> LST --> REG
-  end
+  u1[Upstream_A]
+  u2[Upstream_B]
 
-  subgraph ups ["Upstream MCP servers (separate processes)"]
-    U1["Process A"]
-    U2["Process B"]
-  end
-
-  HST <-->|stdio JSON-RPC| REG
-  UH <-->|stdio MCP| U1
-  UH <-->|stdio MCP| U2
+  host <-->|stdio_JSON_RPC| face
+  hub <-->|stdio_MCP| u1
+  hub <-->|stdio_MCP| u2
 ```
 
-**Call path (conceptual):** the host only talks to Sennit. A **`tools/call`** on **`someKey__toolName`** becomes **`callTool`** on the MCP client for **`someKey`**. **`sennit.batch_call`** fans out **`callTool`** to many **`(serverKey, toolName)`** pairs in parallel without using namespaced ids.
+**Inside `face`:** after connect, **`tools/list`** and **`resources/list`** run in parallel per upstream; merged catalog is fixed for the session.
 
-## How upstream tools appear (discovery)
+**Call path:** host → Sennit only. **`tools/call`** on **`someKey__toolName`** → upstream **`callTool`** for **`someKey`**. **`sennit.batch_call`** uses raw **`(serverKey, toolName)`** pairs in parallel (no namespaced ids in the batch payload).
 
-Sennit **does not** auto-scan your machine for MCP tools (no crawling `PATH`, no reading Cursor’s global config, no guessing processes).
+## Discovery (no host scan)
 
-What happens instead:
+Sennit does **not** read Cursor globals, **`PATH`**, or auto-discover processes.
 
-1. **You declare upstreams** in a Sennit config file (`servers.<key>` with `command` / `args` for each stdio server).
-2. **On startup**, Sennit spawns each upstream and connects as an MCP **client**.
-3. For each connected upstream it calls the MCP **`tools/list`** request and registers **proxies** on the Sennit server as **`{serverKey}__{upstreamToolName}`** (in parallel across upstreams).
-4. Optional **`tools`** array per server is an **allowlist** of upstream tool names; if omitted, every tool returned by `tools/list` is exposed.
-
-So “discovery” is **protocol-level** (whatever each upstream reports via MCP), not **environment-level** (whatever happens to be installed on disk).
+1. You list upstreams in config (`servers.<key>` → **`command`** / **`args`**).
+2. On startup Sennit spawns each process and is an MCP **client** to it.
+3. It runs **`tools/list`** (and **`resources/list`** where supported), then registers proxies: **`{serverKey}__{name}`** for tools, opaque **`urn:sennit:resource:v1:…`** URIs for static resources.
+4. Optional per-server **`tools`** / **`resources`** arrays allowlist what is exposed; omit = expose all listed by the upstream.
 
 ## Quick start
 
@@ -57,56 +45,58 @@ npm ci && npm run validate
 npx sennit doctor
 ```
 
-**First-time install (recommended):** write a per-user config, optionally cloning **stdio** entries from your host’s **`mcp.json`** (Cursor / VS Code style: top-level **`mcpServers`**), then add a single Sennit entry from **`onboard`**:
+**First-time config** (optional import from host **`mcp.json`** with top-level **`mcpServers`**):
 
 ```bash
-npx sennit setup --from /path/to/your/mcp.json
-npx sennit setup   # or: empty servers: {} at the default user path
+npx sennit setup --from /path/to/mcp.json   # or: npx sennit setup  → empty servers
 npx sennit onboard --config "$(npx sennit config path)"
 ```
 
-Use **`sennit config path`** for the default per-user **`config.yaml`** path (**`XDG_CONFIG_HOME`**, etc.).
-
-**CLI essentials:** **`sennit plan`** · **`sennit help`** · **`sennit version`** (**`--json`**) · **`sennit config`** (**`path`**, **`print`**, **`validate`**) · **`sennit doctor`** / **`doctor inspect`**. Full inventory: [`src/cli/commands/README.md`](src/cli/commands/README.md).
-
-Serve (uses config resolution below):
+**Useful CLI:** **`plan`** · **`doctor`** / **`doctor inspect`** · **`config`** (`path`, `print`, `validate`, `schema`) · **`call`** · **`completion`** · **`help`**. Inventory: [`src/cli/commands/README.md`](src/cli/commands/README.md).
 
 ```bash
 npx sennit serve
-npx sennit serve --config examples/sennit.config.example.yaml   # requires build: mock lives under dist/
+npx sennit serve -c examples/sennit.config.example.yaml   # needs build: mock in dist/
 ```
 
 ## Configuration
 
-- **`version: 1`**
-- **`servers.<key>`**: `{ transport: stdio, command, args?, env?, cwd?, tools? }`
-- **`tools`**: optional list of **upstream** tool names to expose; omit to expose all tools from `tools/list`.
-- **`roots`** (optional): **`mode`**: **`ignore`** (default) | **`forward`** | **`intersect`**; for **`intersect`**, set **`allowUriPrefixes`** (non-empty). Upstream servers that call **`roots/list`** receive roots derived from the **host** per policy. Details: [`docs/PASSTHROUGH-AND-MERGE.md`](docs/PASSTHROUGH-AND-MERGE.md).
+| Field | Meaning |
+|-------|---------|
+| **`version`** | **`1`** |
+| **`servers.<key>`** | **`transport: stdio`**, **`command`**, **`args?`**, **`env?`**, **`cwd?`**, **`tools?`**, **`resources?`** |
+| **`tools`** | Optional allowlist of upstream tool names; else all from **`tools/list`**. |
+| **`resources`** | Optional allowlist of upstream resource URIs (exact match); else all from **`resources/list`**. |
+| **`roots`** | **`mode`**: **`ignore`** (default) \| **`forward`** \| **`intersect`**. **`intersect`** requires non-empty **`allowUriPrefixes`**. Controls what upstreams see for **`roots/list`**. |
 
-**Config file resolution** (first match wins): **`--config`** → env **`SENNIT_CONFIG`** → **`./sennit.config.yaml`** / **`./sennit.config.yml`** in the current working directory → **per-user** **`…/sennit/config.yaml`** (see **`sennit config path`**) → if none exist, empty **`servers`** (**`sennit.meta`** + **`sennit.batch_call`** only).
+**Config resolution** (first hit wins): **`--config`** → **`SENNIT_CONFIG`** → **`./sennit.config.yaml`** / **`.yml`** → per-user file (**`sennit config path`**) → empty **`servers`** (only **`sennit.meta`** + **`sennit.batch_call`**).
 
-The per-user path is a stable place for “my upstreams” without checking a project file into git: macOS **`~/Library/Application Support/sennit/config.yaml`**, Windows **`%APPDATA%\sennit\config.yaml`**, Linux **`~/.config/sennit/config.yaml`**, or **`$XDG_CONFIG_HOME/sennit/config.yaml`** when set.
+Per-user default paths: macOS **`~/Library/Application Support/sennit/config.yaml`**, Windows **`%APPDATA%\sennit\config.yaml`**, Linux **`~/.config/sennit/config.yaml`** (or **`$XDG_CONFIG_HOME/sennit/config.yaml`**).
 
-## Tool surface (on the Sennit server)
+## MCP surface on Sennit
 
 | Name | Role |
 |------|------|
-| **`sennit.meta`** | JSON: version, upstream keys, namespacing rules |
-| **`sennit.batch_call`** | Parallel upstream calls: raw **`serverKey`** + upstream **`toolName`** (not the namespaced id) |
-| **`{key}__{name}`** | Single-call proxy to one upstream tool |
+| **`sennit.meta`** | JSON: version, upstream keys, naming rules for tools/resources |
+| **`sennit.batch_call`** | Parallel **`callTool`** by **`serverKey`** + upstream **`toolName`** |
+| **`{key}__{tool}`** | Proxy to one upstream tool |
+| **`{key}__{resource}`** + façade URI | Static resource from upstream; **`resources/read`** proxied. Upstream **resource templates** not merged yet. |
 
-## Repository map
+## Roadmap (short)
 
-| Path | Notes |
-|------|--------|
-| [`src/`](src/README.md) | TypeScript source; per-folder READMEs |
-| [`docs/EXTENDING.md`](docs/EXTENDING.md) | Where to add CLI commands, config, transports, tools |
-| [`docs/PASSTHROUGH-AND-MERGE.md`](docs/PASSTHROUGH-AND-MERGE.md) | Passthrough + merge policies (**roots** forward / intersect / ignore / map), tool-chain analysis |
-| [`docs/ENGINEERING_QUALITY_PLAN.md`](docs/ENGINEERING_QUALITY_PLAN.md) | Quality backlog (robustness, tests, validation) — kept current with the codebase |
-| [`docs/PUBLISHING.md`](docs/PUBLISHING.md) | npm publish checklist |
-| [`tests/`](tests/README.md) | Vitest + integration patterns |
+Done: stdio upstreams, tools + static resources merge, roots modes above. Not done: prompts, roots **`map`**, notifications, sampling/elicitation, HTTP/SSE upstreams — see [`docs/EXTENDING.md`](docs/EXTENDING.md).
+
+## Repo map
+
+| Path | Role |
+|------|------|
+| [`src/`](src/README.md) | TypeScript |
+| [`docs/EXTENDING.md`](docs/EXTENDING.md) | Where to plug in features |
+| [`docs/PUBLISHING.md`](docs/PUBLISHING.md) | Release checklist |
+| [`private-docs/README.md`](private-docs/README.md) | Maintainer-only notes (gitignored files) |
+| [`tests/`](tests/README.md) | Vitest |
 | [`examples/`](examples/) | Sample YAML |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Dev setup and layout |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Dev workflow |
 
 ## License
 

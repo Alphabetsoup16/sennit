@@ -16,6 +16,7 @@ describe("runPlan", () => {
     const names = (r.mergedTools ?? []).map((t) => t.name).sort();
     expect(names).toContain("sennit.meta");
     expect(names).toContain("sennit.batch_call");
+    expect(r.mergedResources).toEqual([]);
     expect(planOverallOk(r)).toBe(true);
   });
 
@@ -33,8 +34,11 @@ describe("runPlan", () => {
     });
     const r = await runPlan(null, config, 15_000);
     expect(r.inspect.upstreams.some((u) => u.serverKey === "mock" && u.ok)).toBe(true);
+    expect(r.inspect.upstreams.find((u) => u.serverKey === "mock")?.resourceCount).toBe(1);
     const names = (r.mergedTools ?? []).map((t) => t.name);
     expect(names).toContain("mock__mock.ping");
+    const resNames = (r.mergedResources ?? []).map((x) => x.name);
+    expect(resNames).toContain("mock__mock.readme");
     expect(planOverallOk(r)).toBe(true);
   });
 });

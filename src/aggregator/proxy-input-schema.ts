@@ -38,7 +38,9 @@ export function proxyToolInputSchema(inputSchema: unknown): z.ZodTypeAny {
     let field: z.ZodTypeAny = z.unknown();
     if (d.type === "string") {
       field = z.string();
-    } else if (d.type === "number" || d.type === "integer") {
+    } else if (d.type === "integer") {
+      field = z.number().int();
+    } else if (d.type === "number") {
       field = z.number();
     } else if (d.type === "boolean") {
       field = z.boolean();

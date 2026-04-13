@@ -1,12 +1,22 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { createAggregator } from "../aggregator/build-server.js";
+import {
+  connectAndProbeWithTimeout,
+  createAggregator,
+  finalizeAggregatorHandle,
+  registerAggregatorSurface,
+  type AggregatorHandle,
+} from "../aggregator/build-server.js";
+import { listAllResources } from "../aggregator/list-resources.js";
+import { toolCatalogsFromProbeRowsOrThrow } from "../aggregator/upstream-probe.js";
 import type { SennitConfig } from "../config/schema.js";
 import { errorMessage } from "../lib/error-message.js";
+import type { DoctorInspectResult } from "../aggregator/doctor-inspect-types.js";
 import { redactSennitConfig } from "./config-redact.js";
-import { runDoctorInspect, type DoctorInspectResult } from "./inspect-upstreams.js";
 
 export type PlanMergedTool = { name: string; description?: string };
+
+export type PlanMergedResource = { name: string; uri: string; description?: string };
 
 export type PlanRunResult = {
   schemaVersion: 1;
@@ -16,44 +26,97 @@ export type PlanRunResult = {
   inspect: DoctorInspectResult;
   mergedTools?: PlanMergedTool[];
   mergedError?: string;
+  mergedResources?: PlanMergedResource[];
 };
+
+async function captureMergedCatalog(handle: AggregatorHandle): Promise<{
+  mergedTools: PlanMergedTool[];
+  mergedResources: PlanMergedResource[];
+}> {
+  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+  await handle.mcp.connect(serverSide);
+  const client = new Client(
+    { name: "sennit-plan", version: "1.0.0" },
+    { capabilities: {} },
+  );
+  await client.connect(clientSide);
+  try {
+    const { tools } = await client.listTools();
+    const mergedTools = tools.map((t) => ({
+      name: t.name,
+      description: t.description,
+    }));
+    let mergedResources: PlanMergedResource[];
+    try {
+      const resources = await listAllResources(client);
+      mergedResources = resources.map((r) => ({
+        name: r.name,
+        uri: r.uri,
+        description: r.description,
+      }));
+    } catch {
+      mergedResources = [];
+    }
+    return { mergedTools, mergedResources };
+  } finally {
+    await client.close();
+  }
+}
 
 /**
  * Resolve path is informational only; `config` must already match `loadSennitConfig(resolved)`.
+ *
+ * Uses one upstream connect when the timed connect+probe phase succeeds; on timeout/fatal inspect,
+ * falls back to a full `createAggregator` for the merged catalog (same as legacy behavior).
  */
 export async function runPlan(
   configPath: string | null,
   config: SennitConfig,
   inspectTimeoutMs: number,
 ): Promise<PlanRunResult> {
-  const inspect = await runDoctorInspect(config, inspectTimeoutMs);
+  const phase = await connectAndProbeWithTimeout(config, inspectTimeoutMs);
+  const inspect = phase.inspect;
 
   let mergedTools: PlanMergedTool[] | undefined;
   let mergedError: string | undefined;
-  try {
-    const { mcp, close } = await createAggregator(config);
+  let mergedResources: PlanMergedResource[] | undefined;
+
+  if (!phase.fatal) {
     try {
-      const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
-      await mcp.connect(serverSide);
-      const client = new Client(
-        { name: "sennit-plan", version: "1.0.0" },
-        { capabilities: {} },
+      const catalogs = toolCatalogsFromProbeRowsOrThrow(phase.rows);
+      await registerAggregatorSurface(
+        phase.mcp,
+        phase.hub,
+        config,
+        catalogs,
+        phase.rootsBridge,
       );
-      await client.connect(clientSide);
+      const handle = finalizeAggregatorHandle(phase.mcp, phase.hub);
       try {
-        const { tools } = await client.listTools();
-        mergedTools = tools.map((t) => ({
-          name: t.name,
-          description: t.description,
-        }));
+        const captured = await captureMergedCatalog(handle);
+        mergedTools = captured.mergedTools;
+        mergedResources = captured.mergedResources;
       } finally {
-        await client.close();
+        await handle.close();
       }
-    } finally {
-      await close();
+    } catch (e) {
+      mergedError = errorMessage(e);
+      await phase.mcp.close().catch(() => undefined);
+      await phase.hub.close().catch(() => undefined);
     }
-  } catch (e) {
-    mergedError = errorMessage(e);
+  } else {
+    try {
+      const handle = await createAggregator(config);
+      try {
+        const captured = await captureMergedCatalog(handle);
+        mergedTools = captured.mergedTools;
+        mergedResources = captured.mergedResources;
+      } finally {
+        await handle.close();
+      }
+    } catch (e) {
+      mergedError = errorMessage(e);
+    }
   }
 
   return {
@@ -63,6 +126,7 @@ export async function runPlan(
     inspect,
     mergedTools,
     mergedError,
+    mergedResources,
   };
 }
 

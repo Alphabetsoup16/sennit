@@ -19,6 +19,7 @@ describe("proxyToolInputSchema", () => {
     });
     expect(s.safeParse({ msg: "hi" }).success).toBe(true);
     expect(s.safeParse({ msg: "hi", n: 1 }).success).toBe(true);
+    expect(s.safeParse({ msg: "hi", n: 1.5 }).success).toBe(false);
     expect(s.safeParse({ n: 1 }).success).toBe(false);
   });
 
