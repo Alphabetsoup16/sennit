@@ -14,14 +14,20 @@ export function wrapFetchWithDeadline(timeoutMs: number, baseFetch: typeof fetch
     }
 
     const fetchPromise = baseFetch(input, { ...init, signal: ctrl.signal });
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
+      timer = setTimeout(() => {
+        timer = undefined;
         ctrl.abort(new DOMException(`fetch timed out after ${timeoutMs}ms`, "TimeoutError"));
         reject(new DOMException(`fetch timed out after ${timeoutMs}ms`, "TimeoutError"));
       }, timeoutMs);
     });
 
     return Promise.race([fetchPromise, timeoutPromise]).finally(() => {
+      if (timer !== undefined) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
       if (parent) {
         parent.removeEventListener("abort", onParentAbort);
       }
