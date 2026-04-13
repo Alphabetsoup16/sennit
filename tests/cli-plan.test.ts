@@ -47,4 +47,71 @@ describe("CLI plan", () => {
       },
     );
   });
+
+  it("lists namespaced tools from two healthy mock upstreams", async () => {
+    const mock = distMockUpstreamPath();
+    await withTempYamlConfig(
+      {
+        version: 1,
+        servers: {
+          a: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [mock],
+          },
+          b: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [mock],
+          },
+        },
+      },
+      async (path) => {
+        const { code, stdout } = runCli(["plan", "-c", path, "--timeout", "15000"]);
+        expect(code).toBe(0);
+        expect(stdout).toContain("a__mock.ping");
+        expect(stdout).toContain("b__mock.ping");
+        expect(stdout).toContain("a__mock.readme");
+        expect(stdout).toContain("b__mock.readme");
+      },
+    );
+  });
+
+  it("JSON plan reports two ok upstreams with merged tools", async () => {
+    const mock = distMockUpstreamPath();
+    await withTempYamlConfig(
+      {
+        version: 1,
+        servers: {
+          a: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [mock],
+          },
+          b: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [mock],
+          },
+        },
+      },
+      async (path) => {
+        const { code, stdout } = runCli(["plan", "-c", path, "--timeout", "15000", "--json"]);
+        expect(code).toBe(0);
+        const j = JSON.parse(stdout) as {
+          inspect: {
+            ok: boolean;
+            upstreams: Array<{ serverKey: string; ok: boolean }>;
+          };
+          mergedTools: Array<{ name: string }>;
+        };
+        expect(j.inspect.ok).toBe(true);
+        expect(j.inspect.upstreams).toHaveLength(2);
+        expect(j.inspect.upstreams.every((u) => u.ok)).toBe(true);
+        const names = j.mergedTools.map((t) => t.name);
+        expect(names).toContain("a__mock.ping");
+        expect(names).toContain("b__mock.ping");
+      },
+    );
+  });
 });

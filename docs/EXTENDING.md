@@ -27,6 +27,15 @@ Today only **stdio** exists in [`src/aggregator/upstream-hub.ts`](../src/aggrega
 2. Branch in `UpstreamHub.connect()` to construct `Client` + the right transport.
 3. Add tests with a mock HTTP server or SDK test utilities.
 
+## Sampling passthrough (upstream → host)
+
+Sennit forwards upstream [`sampling/createMessage`](https://modelcontextprotocol.io/specification/draft/client/sampling) to the **host** MCP client using the same bridge pattern as roots:
+
+- [`src/aggregator/sampling-bridge.ts`](../src/aggregator/sampling-bridge.ts) — `makeUpstreamSamplingBridge(mcp)` → `mcp.server.createMessage(params)`
+- [`src/aggregator/upstream-hub.ts`](../src/aggregator/upstream-hub.ts) — upstream `Client` instances declare `sampling.tools` and register `CreateMessageRequestSchema` after connect
+
+The **host** must declare client `capabilities.sampling` (and `sampling.tools` if upstreams use tool loops). Doctor-only probes use `new UpstreamHub()` with no bridge so they do not pretend to support sampling.
+
 ## Add a built-in MCP tool (on the aggregator)
 
 Edit [`src/aggregator/pipeline.ts`](../src/aggregator/pipeline.ts) (registered from [`build-server.ts`](../src/aggregator/build-server.ts) re-exports): add `mcp.registerTool(...)` in **`registerAggregatorSurface`** (or earlier in the pipeline) so it does not collide with `serverKey__` proxies unless intentional.

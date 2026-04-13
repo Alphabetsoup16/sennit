@@ -20,6 +20,7 @@ import { looseToolArgumentsSchema, proxyToolInputSchema } from "./proxy-input-sc
 import { registerProxyResources, resourceNamespacingSummary } from "./register-resources.js";
 import type { UpstreamRootsBridge } from "./roots-bridge.js";
 import { makeUpstreamRootsBridge } from "./roots-bridge.js";
+import { makeUpstreamSamplingBridge } from "./sampling-bridge.js";
 import { UpstreamHub } from "./upstream-hub.js";
 
 const batchInputSchema = z.object({
@@ -54,7 +55,8 @@ export function createMcpAndHub(config: SennitConfig): {
     { capabilities: { tools: {} } },
   );
   const rootsBridge = makeUpstreamRootsBridge(config, mcp);
-  const hub = new UpstreamHub(rootsBridge);
+  const samplingBridge = makeUpstreamSamplingBridge(mcp);
+  const hub = new UpstreamHub(rootsBridge, samplingBridge);
   return { mcp, hub, rootsBridge };
 }
 
@@ -84,6 +86,8 @@ export async function registerAggregatorSurface(
             upstreamServerKeys: hub.serverKeys(),
             roots: config.roots,
             namespacing: `Proxied tools are {serverKey}${TOOL_NAMESPACE_SEPARATOR}{upstreamToolName}. Server keys must not contain ${TOOL_NAMESPACE_SEPARATOR}.`,
+            sampling:
+              "Upstream servers may call sampling/createMessage during proxied work; Sennit forwards to the host client when it declares the sampling capability (including sampling.tools for tool loops).",
             resources: resourceNamespacingSummary(),
             ...(config.roots.mode !== "ignore"
               ? {

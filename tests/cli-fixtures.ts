@@ -11,6 +11,16 @@ export function distMockUpstreamPath(): string {
   return join(pkgRoot, "dist", "fixtures", "mock-upstream.js");
 }
 
+/** Built stdio server that errors on `tools/list` (requires `npm run build`). */
+export function distMockListToolsFailPath(): string {
+  return join(pkgRoot, "dist", "fixtures", "mock-listtools-fail.js");
+}
+
+/** Built stdio server that snapshots client roots via `listRoots` (requires `npm run build`). */
+export function distMockRootsUpstreamPath(): string {
+  return join(pkgRoot, "dist", "fixtures", "mock-roots-upstream.js");
+}
+
 /** Write `data` as YAML in a temp dir; run `fn(absolutePath)`; always remove the dir. */
 export async function withTempYamlConfig<T>(
   data: unknown,

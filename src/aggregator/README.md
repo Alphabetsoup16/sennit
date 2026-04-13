@@ -1,6 +1,6 @@
 # `src/aggregator`
 
-Host-facing **`McpServer`** plus **`UpstreamHub`** (one MCP **`Client`** per **`servers`** entry, stdio today). Implements **`sennit.meta`**, **`sennit.batch_call`**, namespaced tool proxies, and merged static resources.
+Host-facing **`McpServer`** plus **`UpstreamHub`** (one MCP **`Client`** per **`servers`** entry, stdio today). Implements **`sennit.meta`**, **`sennit.batch_call`**, namespaced tool proxies, merged static resources, and **sampling passthrough** (upstream `sampling/createMessage` → host via **`sampling-bridge.ts`**).
 
 ```mermaid
 flowchart TB
@@ -32,7 +32,8 @@ flowchart TB
 | **`build-server.ts`** | Re-exports **`createAggregator`** and related entrypoints |
 | **`pipeline.ts`** | **`createMcpAndHub`**, **`registerAggregatorSurface`**, **`createAggregator`** wiring |
 | **`upstream-probe.ts`**, **`doctor-inspect-types.ts`** | Shared connect + **`tools/list`** probe (plan / doctor) |
-| **`upstream-hub.ts`** | **`StdioClientTransport`** + **`Client`** per server; optional upstream **`roots/list`** handler |
+| **`upstream-hub.ts`** | **`StdioClientTransport`** + **`Client`** per server; optional **`roots/list`** and **`sampling/createMessage`** handlers |
+| **`sampling-bridge.ts`** | **`makeUpstreamSamplingBridge(mcp)`** — forwards sampling to **`mcp.server.createMessage`** (host client) |
 | **`roots-policy.ts`** | **`applyRootsPolicy`** — **`ignore`** / **`forward`** / **`intersect`** |
 | **`roots-bridge.ts`** | Host **`listRoots`** → policy → upstream |
 | **`batch.ts`** | **`executeBatchCall`** |

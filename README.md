@@ -84,7 +84,7 @@ Per-user default paths: macOS **`~/Library/Application Support/sennit/config.yam
 
 ## Roadmap (short)
 
-Done: stdio upstreams, tools + static resources merge, roots modes above. Not done: prompts, roots **`map`**, notifications, sampling/elicitation, HTTP/SSE upstreams — see [`docs/EXTENDING.md`](docs/EXTENDING.md).
+Done: stdio upstreams, tools + static resources merge, roots modes above, **sampling passthrough** (upstream → host when the host declares sampling). Not done: prompts, roots **`map`**, notifications, elicitation, HTTP/SSE upstreams — see [`docs/EXTENDING.md`](docs/EXTENDING.md).
 
 ## Repo map
 
@@ -93,7 +93,7 @@ Done: stdio upstreams, tools + static resources merge, roots modes above. Not do
 | [`src/`](src/README.md) | TypeScript |
 | [`docs/EXTENDING.md`](docs/EXTENDING.md) | Where to plug in features |
 | [`docs/PUBLISHING.md`](docs/PUBLISHING.md) | Release checklist |
-| [`private-docs/README.md`](private-docs/README.md) | Maintainer-only notes (gitignored files) |
+
 | [`tests/`](tests/README.md) | Vitest |
 | [`examples/`](examples/) | Sample YAML |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Dev workflow |

@@ -3,10 +3,11 @@ import {
   getDefaultEnvironment,
   StdioClientTransport,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { CreateMessageRequestSchema, ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { SennitConfig } from "../config/schema.js";
 import { applyRootsPolicy } from "./roots-policy.js";
 import type { UpstreamRootsBridge } from "./roots-bridge.js";
+import type { UpstreamSamplingBridge } from "./sampling-bridge.js";
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) {
@@ -22,7 +23,10 @@ export type UpstreamHubConnectOptions = {
 export class UpstreamHub {
   private readonly clients = new Map<string, Client>();
 
-  constructor(private readonly rootsBridge?: UpstreamRootsBridge) {}
+  constructor(
+    private readonly rootsBridge?: UpstreamRootsBridge,
+    private readonly samplingBridge?: UpstreamSamplingBridge,
+  ) {}
 
   async connect(config: SennitConfig, options?: UpstreamHubConnectOptions): Promise<void> {
     const signal = options?.signal;
@@ -37,11 +41,19 @@ export class UpstreamHub {
           cwd: srv.cwd,
           stderr: "inherit",
         });
+        const clientCapabilities: {
+          roots?: Record<string, unknown>;
+          sampling?: { tools?: Record<string, unknown> };
+        } = {};
+        if (this.rootsBridge) {
+          clientCapabilities.roots = {};
+        }
+        if (this.samplingBridge) {
+          clientCapabilities.sampling = { tools: {} };
+        }
         const client = new Client(
           { name: `sennit-upstream-${key}`, version: "0.1.0" },
-          {
-            capabilities: this.rootsBridge ? { roots: {} } : {},
-          },
+          { capabilities: clientCapabilities },
         );
         await client.connect(transport);
         throwIfAborted(signal);
@@ -50,6 +62,12 @@ export class UpstreamHub {
           client.setRequestHandler(ListRootsRequestSchema, async () => ({
             roots: applyRootsPolicy(bridge.policy, await bridge.getHostRoots()),
           }));
+        }
+        if (this.samplingBridge) {
+          const sampling = this.samplingBridge;
+          client.setRequestHandler(CreateMessageRequestSchema, async (request) =>
+            sampling.forwardCreateMessage(request.params),
+          );
         }
         this.clients.set(key, client);
       }
