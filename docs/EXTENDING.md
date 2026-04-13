@@ -19,13 +19,13 @@ For **multi-capability passthrough** (tools, resources, prompts, **roots**, noti
 2. If parsing rules change, update [`src/config/load.ts`](../src/config/load.ts).
 3. Document in [`src/config/README.md`](../src/config/README.md) and sample YAML in [`examples/`](../examples/).
 
-## Add an upstream transport (e.g. HTTP)
+## Add or change an upstream transport
 
-Today only **stdio** exists in [`src/aggregator/upstream-hub.ts`](../src/aggregator/upstream-hub.ts). A second transport usually means:
+**stdio** and **streamableHttp** are implemented in [`src/aggregator/upstream-hub.ts`](../src/aggregator/upstream-hub.ts). A new variant usually means:
 
-1. Extend the server entry in `schema.ts` with a discriminated union (`transport: "stdio" | "http"` + fields per variant).
-2. Branch in `UpstreamHub.connect()` to construct `Client` + the right transport.
-3. Add tests with a mock HTTP server or SDK test utilities.
+1. Extend the server entry in [`schema.ts`](../src/config/schema.ts) (`discriminatedUnion`).
+2. Branch in `UpstreamHub.spawnClient` to construct `Client` + the right transport.
+3. Add tests (mock server or SDK utilities).
 
 ## Sampling / elicitation passthrough (upstream → host)
 
