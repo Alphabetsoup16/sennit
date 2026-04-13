@@ -11,6 +11,8 @@ export type DoctorInspectUpstream = {
   promptNames?: string[];
   /** Present when upstream supports `resources/list` and listing succeeded. */
   resourceCount?: number;
+  /** Present when upstream supports resource templates and listing succeeded. */
+  resourceTemplateCount?: number;
 };
 
 export type DoctorInspectResult = {

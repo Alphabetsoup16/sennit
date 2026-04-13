@@ -8,6 +8,7 @@ import { jsonText } from "../lib/json-text.js";
 import { BATCH_CALL_MAX_ITEMS } from "../lib/limits.js";
 import { takeUniqueMergedToolId, TOOL_NAMESPACE_SEPARATOR } from "../lib/namespace.js";
 import { sennitJsonLog } from "../lib/sennit-json-log.js";
+import { withAbortTimeout } from "../lib/with-timeout.js";
 import { truncateForToolList } from "../lib/truncate-tool-description.js";
 import { VERSION } from "../lib/version.js";
 import { executeBatchCall } from "./batch.js";
@@ -26,7 +27,7 @@ import type { UpstreamRootsBridge } from "./roots-bridge.js";
 import { makeUpstreamRootsBridge } from "./roots-bridge.js";
 import { makeUpstreamElicitationBridge } from "./elicitation-bridge.js";
 import { makeUpstreamSamplingBridge } from "./sampling-bridge.js";
-import { makeUpstreamToolListChangedBridge } from "./tool-list-changed-bridge.js";
+import { makeUpstreamHostListChangedBridge } from "./host-list-changed-bridge.js";
 import { UpstreamHub } from "./upstream-hub.js";
 
 const batchInputSchema = z.object({
@@ -64,12 +65,12 @@ export function createMcpAndHub(config: SennitConfig): {
   const rootsBridge = makeUpstreamRootsBridge(config, mcp);
   const samplingBridge = makeUpstreamSamplingBridge(mcp);
   const elicitationBridge = makeUpstreamElicitationBridge(mcp);
-  const toolListChangedBridge = makeUpstreamToolListChangedBridge(mcp);
+  const hostListChangedBridge = makeUpstreamHostListChangedBridge(mcp);
   const hub = new UpstreamHub(
     rootsBridge,
     samplingBridge,
     elicitationBridge,
-    toolListChangedBridge,
+    hostListChangedBridge,
   );
   return { mcp, hub, rootsBridge };
 }
@@ -105,6 +106,9 @@ export async function registerAggregatorSurface(
               "Upstream servers may call sampling/createMessage during proxied work; Sennit forwards to the host client when it declares the sampling capability (including sampling.tools for tool loops).",
             toolsListDescriptionMaxChars: config.toolsListDescriptionMaxChars ?? null,
             dynamicToolList: config.dynamicToolList ?? false,
+            dynamicResourceList: config.dynamicResourceList ?? false,
+            dynamicPromptList: config.dynamicPromptList ?? false,
+            batchCallMaxConcurrency: config.batchCallMaxConcurrency ?? null,
             lazyAndIdle:
               "servers.*.lazy skips spawn at connect until probe or a proxied call; servers.*.idleTimeoutMs closes the upstream client after idle (next call reconnects; merged catalog unchanged until host reconnects to Sennit).",
             elicitation:
@@ -129,7 +133,10 @@ export async function registerAggregatorSurface(
     },
     async (args) => {
       const { calls } = batchInputSchema.parse(args);
-      const results = await executeBatchCall(hub, calls);
+      const results = await executeBatchCall(hub, calls, {
+        maxConcurrency: config.batchCallMaxConcurrency,
+        toolCallTimeoutMsForServer: (sk) => config.servers[sk]?.toolCallTimeoutMs,
+      });
       return {
         content: [{ type: "text", text: jsonText(results) }],
       };
@@ -166,10 +173,23 @@ export async function registerAggregatorSurface(
           }
           const t0 = Date.now();
           try {
-            const out = await c.callTool({
-              name: tool.name,
-              arguments: (args as Record<string, unknown>) ?? {},
-            });
+            const timeoutMs = config.servers[serverKey]?.toolCallTimeoutMs;
+            const out =
+              timeoutMs !== undefined
+                ? await withAbortTimeout(timeoutMs, (signal) =>
+                    c.callTool(
+                      {
+                        name: tool.name,
+                        arguments: (args as Record<string, unknown>) ?? {},
+                      },
+                      undefined,
+                      { signal },
+                    ),
+                  )
+                : await c.callTool({
+                    name: tool.name,
+                    arguments: (args as Record<string, unknown>) ?? {},
+                  });
             sennitJsonLog("tool_proxy_ok", {
               serverKey,
               tool: tool.name,

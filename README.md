@@ -63,18 +63,18 @@ npx sennit onboard --config "$(npx sennit config path)"
 
 ```bash
 npx sennit serve
-npx sennit serve -c examples/sennit.config.example.yaml
+npx sennit serve -c sennit.config.example.yaml
 ```
 
 CLI inventory and flags: [`src/cli/commands/README.md`](src/cli/commands/README.md) (`plan`, `doctor`, `config`, `call`, …).
 
 ## Configuration
 
-Sennit reads YAML or JSON: **`version: 1`**, **`servers`** (each entry is **`transport: stdio`** or **`transport: streamableHttp`** with **`url`**), optional per-server allowlists (`tools`, `resources`, `prompts`), **`lazy`** / **`idleTimeoutMs`**, plus top-level **`roots`**, **`toolsListDescriptionMaxChars`**, **`dynamicToolList`**.
+Sennit reads YAML or JSON: **`version: 1`**, **`servers`** (**`stdio`**, **`streamableHttp`**, or legacy **`sse`**), optional allowlists (`tools`, `resources`, `resourceTemplates`, `prompts`), **`lazy`** / **`idleTimeoutMs`** / **`toolCallTimeoutMs`**, plus top-level **`roots`** (including optional **`mapByUpstream`** URI rewrites), **`toolsListDescriptionMaxChars`**, **`dynamicToolList`** / **`dynamicResourceList`** / **`dynamicPromptList`**, and **`batchCallMaxConcurrency`** for **`sennit.batch_call`**.
 
 Resolution order: **`--config`** → **`SENNIT_CONFIG`** → **`./sennit.config.yaml`** / **`.yml`** → default user path from **`sennit config path`**. Set **`SENNIT_LOG=json`** for structured stderr lines on proxied tool calls.
 
-**Authoritative field reference, redaction rules, and roots modes:** [`src/config/README.md`](src/config/README.md) · **Sample file:** [`examples/sennit.config.example.yaml`](examples/sennit.config.example.yaml)
+**Authoritative field reference, redaction rules, and roots modes:** [`src/config/README.md`](src/config/README.md) · **Sample file:** [`sennit.config.example.yaml`](sennit.config.example.yaml)
 
 ## What the host sees
 
@@ -84,7 +84,7 @@ Resolution order: **`--config`** → **`SENNIT_CONFIG`** → **`./sennit.config.
 | **`sennit.batch_call`** | Parallel upstream `tools/call` by `serverKey` + upstream tool name |
 | **`{key}__{tool}`** | Proxied tool |
 | **`{key}__{prompt}`** | Proxied prompt |
-| **`{key}__{resource}`** | Proxied static resource (façade URI) |
+| **`{key}__{resource}`** | Proxied static resource or resource template (façade URI / pattern) |
 
 Implementation detail (hub, bridges, batching): [`src/aggregator/README.md`](src/aggregator/README.md)
 
@@ -103,7 +103,7 @@ Implementation detail (hub, bridges, batching): [`src/aggregator/README.md`](src
 
 ## Roadmap
 
-Shipped highlights include Streamable HTTP upstreams, merged prompts, roots policies, sampling and elicitation passthrough to the host, lazy connect, idle disconnect, optional `dynamicToolList` hints, and `SENNIT_LOG`. Gaps and extension points: [`docs/EXTENDING.md`](docs/EXTENDING.md).
+Shipped highlights include HTTP/SSE upstreams, merged prompts and resource templates, roots policies with per-upstream URI mapping, sampling and elicitation passthrough, lazy connect, idle disconnect, optional list-changed hints, per-call and batch timeouts/concurrency, and `SENNIT_LOG`. Gaps and extension points: [`docs/EXTENDING.md`](docs/EXTENDING.md).
 
 ## License
 

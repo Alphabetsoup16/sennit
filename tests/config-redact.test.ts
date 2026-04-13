@@ -56,6 +56,24 @@ describe("redactSennitConfig", () => {
     }
   });
 
+  it("redacts sse header values", () => {
+    const c = sennitConfigSchema.parse({
+      version: 1,
+      servers: {
+        s: {
+          transport: "sse",
+          url: "https://example.com/sse",
+          headers: { Authorization: "Bearer x" },
+        },
+      },
+    });
+    const r = redactSennitConfig(c);
+    expect(r.servers.s.transport).toBe("sse");
+    if (r.servers.s.transport === "sse") {
+      expect(r.servers.s.headers).toEqual({ Authorization: REDACTED_VALUE });
+    }
+  });
+
   it("redacts roots.allowUriPrefixes entries", () => {
     const c = sennitConfigSchema.parse({
       version: 1,

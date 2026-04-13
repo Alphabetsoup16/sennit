@@ -15,7 +15,10 @@ export function formatInspectUpstreamsHumanLines(
   }
   for (const u of upstreams) {
     if (u.ok) {
-      const resPart = u.resourceCount !== undefined ? `; ${u.resourceCount} resources` : "";
+      const tplPart =
+        u.resourceTemplateCount !== undefined ? `; ${u.resourceTemplateCount} resource templates` : "";
+      const resPart =
+        u.resourceCount !== undefined ? `; ${u.resourceCount} resources${tplPart}` : tplPart || "";
       const promptPart = u.promptCount !== undefined ? `; ${u.promptCount} prompts` : "";
       lines.push(
         `  ${u.serverKey}: ok (${u.toolCount ?? 0} tools${promptPart}${resPart}) — ${(u.toolNames ?? []).join(", ") || "(none)"}`,

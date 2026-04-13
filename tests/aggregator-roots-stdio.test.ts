@@ -65,6 +65,38 @@ describe("aggregator roots (stdio upstream + host roots)", () => {
     );
   });
 
+  it("mapByUpstream rewrites roots for the requesting server key", async () => {
+    const hostRoots: Root[] = [{ uri: "file:///project/a", name: "a" }];
+    await withInMemoryAggregatorAndHostRoots(
+      {
+        version: 1,
+        roots: {
+          mode: "forward",
+          mapByUpstream: {
+            mock: [{ fromPrefix: "file:///project/", toPrefix: "file:///v/" }],
+          },
+        },
+        servers: {
+          mock: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [distMockRootsUpstreamPath()],
+          },
+        },
+      },
+      hostRoots,
+      async (client) => {
+        const out = await client.callTool({
+          name: "mock__mock.rootsSnapshot",
+          arguments: {},
+        });
+        expect(out.isError).not.toBe(true);
+        const parsed = JSON.parse(firstTextBlock(out)) as Root[];
+        expect(parsed).toEqual([{ uri: "file:///v/a", name: "a" }]);
+      },
+    );
+  });
+
   it("ignore mode: upstream listRoots fails without client roots capability on Sennit", async () => {
     await withInMemoryAggregator(
       {

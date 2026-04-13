@@ -2,13 +2,19 @@
 version: 1
 # Optional: cap length of merged tool descriptions (Unicode code units) for smaller `tools/list` payloads.
 # toolsListDescriptionMaxChars: 400
-# Optional: notify host when upstreams signal tools/list_changed (registrations still fixed until reconnect).
+# Optional: forward upstream list_changed hints to the host (merged registrations still fixed until reconnect).
 # dynamicToolList: true
-# Optional: how upstream MCP servers see workspace roots (modes: ignore | forward | intersect — see root README).
+# dynamicResourceList: true
+# dynamicPromptList: true
+# Optional: max concurrent upstream calls per single `sennit.batch_call` request.
+# batchCallMaxConcurrency: 8
+# Optional: how upstream MCP servers see workspace roots (see root README / src/config/README.md).
 # roots:
-#   mode: ignore        # ignore | forward | intersect (default when omitted: ignore)
-#   allowUriPrefixes:   # required for intersect — roots whose uri starts with one of these
-#     - "file:///Users/you/projects/acme"
+#   mode: ignore
+#   allowUriPrefixes: ["file:///Users/you/projects/acme"]   # required when mode is intersect
+#   mapByUpstream:
+#     myserver:
+#       - { fromPrefix: "file:///host/", toPrefix: "file:///container/" }
 servers:
   # docs:
   #   transport: stdio
@@ -16,6 +22,7 @@ servers:
   #   args: ["-y", "@some/mcp-server"]
   #   tools: ["search", "fetch"]   # optional allowlist; omit = all tools
   #   resources: ["file:///mock/readme.md"]   # optional; exact upstream URIs from resources/list
+  #   resourceTemplates: ["file:///tpl/{id}"]   # optional; exact uriTemplate from resources/templates/list
   #   prompts: ["greeting"]   # optional; upstream prompt names from prompts/list
   mock:
     transport: stdio
@@ -26,5 +33,10 @@ servers:
   #   url: https://example.com/mcp
   #   headers:
   #     Authorization: Bearer ${YOUR_TOKEN}
+  #   httpRequestTimeoutMs: 30000
   #   lazy: true
   #   idleTimeoutMs: 600000
+  #   toolCallTimeoutMs: 120000
+  # legacy_sse:
+  #   transport: sse
+  #   url: https://example.com/sse

@@ -17,11 +17,11 @@ For **multi-capability passthrough** (tools, resources, prompts, **roots**, noti
 
 1. Update [`src/config/schema.ts`](../src/config/schema.ts) (Zod).
 2. If parsing rules change, update [`src/config/load.ts`](../src/config/load.ts).
-3. Document in [`src/config/README.md`](../src/config/README.md) and sample YAML in [`examples/`](../examples/).
+3. Document in [`src/config/README.md`](../src/config/README.md) and update the root sample [`sennit.config.example.yaml`](../sennit.config.example.yaml) when the shape changes.
 
 ## Add or change an upstream transport
 
-**stdio** and **streamableHttp** are implemented in [`src/aggregator/upstream-hub.ts`](../src/aggregator/upstream-hub.ts). A new variant usually means:
+**stdio**, **streamableHttp**, and legacy **sse** are implemented in [`src/aggregator/upstream-hub.ts`](../src/aggregator/upstream-hub.ts). Remote URLs must use **`http:`** or **`https:`** (`assertHttpOrHttpsUrl`). Optional **`httpRequestTimeoutMs`** wraps **`fetch`** via [`fetch-timeout.ts`](../src/lib/fetch-timeout.ts). A new variant usually means:
 
 1. Extend the server entry in [`schema.ts`](../src/config/schema.ts) (`discriminatedUnion`).
 2. Branch in `UpstreamHub.spawnClient` to construct `Client` + the right transport.
@@ -41,11 +41,12 @@ The **host** must declare the matching client capabilities. Doctor-only probes u
 
 - **`servers.*.lazy`**: skipped in `connect()`; [`ensureClient`](../src/aggregator/upstream-hub.ts) connects on probe or first proxied use.
 - **`servers.*.idleTimeoutMs`**: [`touchActivity`](../src/aggregator/upstream-hub.ts) arms a timer after successful proxied calls; idle closes the client (catalog unchanged until the host reconnects to Sennit).
-- **`transport: streamableHttp`**: [`StreamableHTTPClientTransport`](../src/aggregator/upstream-hub.ts) from the SDK; optional static **`headers`** (redacted in `config print`).
+- **`transport: streamableHttp`**: [`StreamableHTTPClientTransport`](../src/aggregator/upstream-hub.ts) from the SDK; optional **`headers`**, **`streamableHttpReconnection`**, **`httpRequestTimeoutMs`**.
+- **`transport: sse`**: deprecated SDK [`SSEClientTransport`](../src/aggregator/upstream-hub.ts) for legacy servers.
 
-## Dynamic tool list hint
+## Dynamic list-changed hints (tools / resources / prompts)
 
-When **`dynamicToolList`** is true, upstream MCP clients subscribe to tool list-changed notifications (if advertised) and call [`sendToolListChanged`](../src/aggregator/tool-list-changed-bridge.ts). Merged tool registrations are still fixed at aggregator startup.
+When **`dynamicToolList`**, **`dynamicResourceList`**, or **`dynamicPromptList`** is true, upstream MCP clients subscribe to the matching list-changed notifications (if advertised) and call **`sendToolListChanged`**, **`sendResourceListChanged`**, or **`sendPromptListChanged`** on the host via [`host-list-changed-bridge.ts`](../src/aggregator/host-list-changed-bridge.ts). Merged registrations are still fixed at aggregator startup until the host reconnects.
 
 ## Structured logs
 

@@ -1,6 +1,6 @@
 # `src/aggregator`
 
-Host-facing **`McpServer`** plus **`UpstreamHub`**: one MCP **`Client`** per **`servers`** entry (**`stdio`** subprocess or **`streamableHttp`** remote). Implements **`sennit.meta`**, **`sennit.batch_call`**, namespaced **tools / prompts / resources**, sampling + elicitation passthrough, optional **lazy** + **idle** lifecycle, and optional **`dynamicToolList`** notifications to the host.
+Host-facing **`McpServer`** plus **`UpstreamHub`**: one MCP **`Client`** per **`servers`** entry (**`stdio`**, **`streamableHttp`**, or legacy **`sse`**). Implements **`sennit.meta`**, **`sennit.batch_call`**, namespaced **tools / prompts / resources** (static + **resource templates**), sampling + elicitation passthrough, optional **lazy** + **idle** lifecycle, optional per-server **`toolCallTimeoutMs`**, optional **`batchCallMaxConcurrency`**, and optional **`dynamicToolList` / `dynamicResourceList` / `dynamicPromptList`** notifications to the host.
 
 ```mermaid
 flowchart TB
@@ -32,17 +32,17 @@ flowchart TB
 | **`build-server.ts`** | Re-exports **`createAggregator`** and related entrypoints |
 | **`pipeline.ts`** | **`createMcpAndHub`**, **`registerAggregatorSurface`**, **`createAggregator`** wiring |
 | **`upstream-probe.ts`**, **`doctor-inspect-types.ts`** | Shared connect + list probes (plan / doctor inspect) |
-| **`upstream-hub.ts`** | **`StdioClientTransport`** or **`StreamableHTTPClientTransport`** + **`Client`**; **`ensureClient`** / **`touchActivity`**; bridge wiring |
+| **`upstream-hub.ts`** | **`StdioClientTransport`**, **`StreamableHTTPClientTransport`**, or **`SSEClientTransport`** + **`Client`**; **`ensureClient`** / **`touchActivity`**; bridge wiring |
 | **`sampling-bridge.ts`** | **`makeUpstreamSamplingBridge(mcp)`** → **`mcp.server.createMessage`** |
 | **`elicitation-bridge.ts`** | **`makeUpstreamElicitationBridge(mcp)`** → **`mcp.server.elicitInput`** |
-| **`tool-list-changed-bridge.ts`** | **`sendToolListChanged`** when **`dynamicToolList`** |
+| **`host-list-changed-bridge.ts`** | Host **`send*ListChanged`** when **`dynamicToolList` / `dynamicResourceList` / `dynamicPromptList`** |
 | **`list-prompts.ts`**, **`prompt-args-from-listing.ts`** | Paginated **`prompts/list`** + Zod args for **`registerPrompt`** |
-| **`roots-policy.ts`** | **`applyRootsPolicy`** — **`ignore`** / **`forward`** / **`intersect`** |
+| **`roots-policy.ts`** | **`applyRootsPolicy`**, **`applyUpstreamRootRewrites`** (**`mapByUpstream`**) |
 | **`roots-bridge.ts`** | Host **`listRoots`** → policy → upstream |
 | **`batch.ts`** | **`executeBatchCall`** |
 | **`proxy-input-schema.ts`** | Upstream JSON Schema → Zod for **`registerTool`**; loose fallback |
-| **`list-resources.ts`** | Paginated **`resources/list`** |
-| **`register-resources.ts`** | Merge static resources; **`urn:sennit:resource:v1:…`** façade + **`resources/read`** proxy |
+| **`list-resources.ts`** | Paginated **`resources/list`** and **`resources/templates/list`** |
+| **`register-resources.ts`** | Merge static resources + **resource templates**; façade URIs / templates + **`resources/read`** proxy |
 
 ## Registered surface
 

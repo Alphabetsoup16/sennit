@@ -1,4 +1,5 @@
 import { Client, type ClientOptions } from "@modelcontextprotocol/sdk/client/index.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
   getDefaultEnvironment,
@@ -9,17 +10,60 @@ import {
   ElicitRequestSchema,
   ListRootsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { assertHttpOrHttpsUrl } from "../lib/assert-http-upstream-url.js";
+import { sennitJsonLog } from "../lib/sennit-json-log.js";
+import { wrapFetchWithDeadline } from "../lib/fetch-timeout.js";
 import type { SennitConfig } from "../config/schema.js";
-import { applyRootsPolicy } from "./roots-policy.js";
+import { applyRootsPolicy, applyUpstreamRootRewrites } from "./roots-policy.js";
 import type { UpstreamElicitationBridge } from "./elicitation-bridge.js";
 import type { UpstreamRootsBridge } from "./roots-bridge.js";
 import type { UpstreamSamplingBridge } from "./sampling-bridge.js";
-import type { UpstreamToolListChangedBridge } from "./tool-list-changed-bridge.js";
+import type { UpstreamHostListChangedBridge } from "./host-list-changed-bridge.js";
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) {
     throw new DOMException("connect aborted", "AbortError");
   }
+}
+
+function listChangedNotifyHandler(notify: () => void) {
+  return {
+    autoRefresh: false as const,
+    debounceMs: 0,
+    onChanged: (error: Error | null | undefined) => {
+      if (error) {
+        return;
+      }
+      notify();
+    },
+  };
+}
+
+/** Shared URL validation, optional headers, and deadline-wrapped `fetch` for HTTP-based MCP transports. */
+function urlAndOptsForRemoteMcp(
+  serverKey: string,
+  srv: { url: string; headers?: Record<string, string>; httpRequestTimeoutMs?: number },
+): {
+  url: URL;
+  requestInitAndFetch: {
+    requestInit?: { headers: Record<string, string> };
+    fetch?: typeof fetch;
+  };
+} {
+  const url = assertHttpOrHttpsUrl(srv.url, `servers.${serverKey}.url`);
+  const fetchImpl =
+    srv.httpRequestTimeoutMs !== undefined
+      ? wrapFetchWithDeadline(srv.httpRequestTimeoutMs)
+      : undefined;
+  return {
+    url,
+    requestInitAndFetch: {
+      ...(srv.headers && Object.keys(srv.headers).length > 0
+        ? { requestInit: { headers: srv.headers } }
+        : {}),
+      ...(fetchImpl ? { fetch: fetchImpl } : {}),
+    },
+  };
 }
 
 export type UpstreamHubConnectOptions = {
@@ -28,10 +72,12 @@ export type UpstreamHubConnectOptions = {
 
 type ServerEntry = SennitConfig["servers"][string];
 
-/** Manages one MCP `Client` per configured upstream (stdio or Streamable HTTP). */
+/** Manages one MCP `Client` per configured upstream (stdio, Streamable HTTP, or legacy SSE). */
 export class UpstreamHub {
   private config: SennitConfig | null = null;
   private dynamicToolList = false;
+  private dynamicResourceList = false;
+  private dynamicPromptList = false;
   private readonly clients = new Map<string, Client>();
   private readonly connectPromises = new Map<string, Promise<Client>>();
   private readonly idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -40,7 +86,7 @@ export class UpstreamHub {
     private readonly rootsBridge?: UpstreamRootsBridge,
     private readonly samplingBridge?: UpstreamSamplingBridge,
     private readonly elicitationBridge?: UpstreamElicitationBridge,
-    private readonly toolListChangedBridge?: UpstreamToolListChangedBridge,
+    private readonly hostListChangedBridge?: UpstreamHostListChangedBridge,
   ) {}
 
   /** Configured upstream keys (stable for `sennit.meta` after `connect`). */
@@ -55,6 +101,8 @@ export class UpstreamHub {
     const signal = options?.signal;
     this.config = config;
     this.dynamicToolList = config.dynamicToolList === true;
+    this.dynamicResourceList = config.dynamicResourceList === true;
+    this.dynamicPromptList = config.dynamicPromptList === true;
     try {
       const baseEnv = getDefaultEnvironment();
       for (const [key, srv] of Object.entries(config.servers)) {
@@ -132,6 +180,7 @@ export class UpstreamHub {
       return;
     }
     this.clients.delete(serverKey);
+    sennitJsonLog("upstream_idle_disconnect", { serverKey });
     await c.close().catch(() => undefined);
   }
 
@@ -157,18 +206,27 @@ export class UpstreamHub {
     }
 
     const clientOptions: ClientOptions = { capabilities: clientCapabilities };
-    if (this.toolListChangedBridge && this.dynamicToolList) {
+    const bridge = this.hostListChangedBridge;
+    if (
+      bridge &&
+      (this.dynamicToolList || this.dynamicResourceList || this.dynamicPromptList)
+    ) {
       clientOptions.listChanged = {
-        tools: {
-          autoRefresh: false,
-          debounceMs: 0,
-          onChanged: (error) => {
-            if (error) {
-              return;
+        ...(this.dynamicToolList
+          ? { tools: listChangedNotifyHandler(() => bridge.signalHostToolListChanged()) }
+          : {}),
+        ...(this.dynamicResourceList
+          ? {
+              resources: listChangedNotifyHandler(() =>
+                bridge.signalHostResourceListChanged(),
+              ),
             }
-            this.toolListChangedBridge!.signalHostToolListChanged();
-          },
-        },
+          : {}),
+        ...(this.dynamicPromptList
+          ? {
+              prompts: listChangedNotifyHandler(() => bridge.signalHostPromptListChanged()),
+            }
+          : {}),
       };
     }
 
@@ -187,13 +245,27 @@ export class UpstreamHub {
       });
       await client.connect(transport);
     } else if (srv.transport === "streamableHttp") {
-      const url = new URL(srv.url);
-      const transport = new StreamableHTTPClientTransport(
-        url,
-        srv.headers && Object.keys(srv.headers).length > 0
-          ? { requestInit: { headers: srv.headers } }
-          : undefined,
-      );
+      const { url, requestInitAndFetch } = urlAndOptsForRemoteMcp(serverKey, srv);
+      const reconnectionOptions =
+        srv.streamableHttpReconnection !== undefined
+          ? {
+              maxRetries: srv.streamableHttpReconnection.maxRetries ?? 2,
+              initialReconnectionDelay:
+                srv.streamableHttpReconnection.initialReconnectionDelay ?? 1000,
+              maxReconnectionDelay:
+                srv.streamableHttpReconnection.maxReconnectionDelay ?? 30_000,
+              reconnectionDelayGrowFactor:
+                srv.streamableHttpReconnection.reconnectionDelayGrowFactor ?? 1.5,
+            }
+          : undefined;
+      const transport = new StreamableHTTPClientTransport(url, {
+        ...requestInitAndFetch,
+        ...(reconnectionOptions ? { reconnectionOptions } : {}),
+      });
+      await client.connect(transport);
+    } else if (srv.transport === "sse") {
+      const { url, requestInitAndFetch } = urlAndOptsForRemoteMcp(serverKey, srv);
+      const transport = new SSEClientTransport(url, requestInitAndFetch);
       await client.connect(transport);
     } else {
       throw new Error(`unsupported upstream transport for ${JSON.stringify(serverKey)}`);
@@ -203,9 +275,13 @@ export class UpstreamHub {
 
     if (this.rootsBridge) {
       const bridge = this.rootsBridge;
-      client.setRequestHandler(ListRootsRequestSchema, async () => ({
-        roots: applyRootsPolicy(bridge.policy, await bridge.getHostRoots()),
-      }));
+      client.setRequestHandler(ListRootsRequestSchema, async () => {
+        const hostRoots = await bridge.getHostRoots();
+        const filtered = applyRootsPolicy(bridge.policy, hostRoots);
+        return {
+          roots: applyUpstreamRootRewrites(serverKey, bridge.policy, filtered),
+        };
+      });
     }
     if (this.samplingBridge) {
       const sampling = this.samplingBridge;
@@ -246,6 +322,8 @@ export class UpstreamHub {
     this.connectPromises.clear();
     this.config = null;
     this.dynamicToolList = false;
+    this.dynamicResourceList = false;
+    this.dynamicPromptList = false;
     await Promise.all(
       [...this.clients.values()].map((c) =>
         c.close().catch(() => undefined),

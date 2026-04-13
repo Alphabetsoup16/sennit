@@ -61,6 +61,41 @@ describe("sennitConfigSchema", () => {
     });
   });
 
+  it("accepts sse server and http tuning fields", () => {
+    const c = sennitConfigSchema.parse({
+      version: 1,
+      servers: {
+        legacy: {
+          transport: "sse",
+          url: "https://old.example/mcp",
+          httpRequestTimeoutMs: 12_000,
+        },
+        http: {
+          transport: "streamableHttp",
+          url: "https://mcp.example.com/v1",
+          httpRequestTimeoutMs: 8000,
+          streamableHttpReconnection: { maxRetries: 5 },
+        },
+      },
+    });
+    expect(c.servers.legacy.transport).toBe("sse");
+    if (c.servers.http.transport === "streamableHttp") {
+      expect(c.servers.http.streamableHttpReconnection?.maxRetries).toBe(5);
+    }
+  });
+
+  it("accepts roots.mapByUpstream", () => {
+    const c = sennitConfigSchema.parse({
+      version: 1,
+      servers: {},
+      roots: {
+        mode: "forward",
+        mapByUpstream: { a: [{ fromPrefix: "file:///x/", toPrefix: "file:///y/" }] },
+      },
+    });
+    expect(c.roots.mapByUpstream?.a).toHaveLength(1);
+  });
+
   it("accepts optional servers.*.resources allowlist", () => {
     const c = sennitConfigSchema.parse({
       version: 1,

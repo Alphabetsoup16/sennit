@@ -1,7 +1,7 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { errorMessage } from "../lib/error-message.js";
 import { listAllPrompts } from "./list-prompts.js";
-import { listAllResources } from "./list-resources.js";
+import { listAllResourceTemplates, listAllResources } from "./list-resources.js";
 import type { DoctorInspectResult, DoctorInspectUpstream } from "./doctor-inspect-types.js";
 import type { UpstreamHub } from "./upstream-hub.js";
 
@@ -15,6 +15,7 @@ export type UpstreamProbeOkRow = {
   /** Present when upstream advertises `prompts` and listing succeeded. */
   prompts?: ListedPrompt[];
   resourceCount?: number;
+  resourceTemplateCount?: number;
 };
 
 export type UpstreamProbeErrRow = {
@@ -40,11 +41,20 @@ export async function probeConnectedHub(hub: UpstreamHub): Promise<UpstreamProbe
         }
         const { tools } = await client.listTools();
         let resourceCount: number | undefined;
+        let resourceTemplateCount: number | undefined;
         try {
           const resources = await listAllResources(client);
           resourceCount = resources.length;
         } catch {
           // Upstream may not advertise resources — omit resourceCount.
+        }
+        if (client.getServerCapabilities()?.resources) {
+          try {
+            const tpl = await listAllResourceTemplates(client);
+            resourceTemplateCount = tpl.length;
+          } catch {
+            resourceTemplateCount = undefined;
+          }
         }
         let prompts: ListedPrompt[] | undefined;
         if (client.getServerCapabilities()?.prompts) {
@@ -54,7 +64,14 @@ export async function probeConnectedHub(hub: UpstreamHub): Promise<UpstreamProbe
             prompts = [];
           }
         }
-        return { serverKey, ok: true as const, tools, prompts, resourceCount };
+        return {
+          serverKey,
+          ok: true as const,
+          tools,
+          prompts,
+          resourceCount,
+          resourceTemplateCount,
+        };
       } catch (e) {
         return { serverKey, ok: false as const, error: errorMessage(e) };
       }
@@ -74,6 +91,7 @@ export function doctorInspectResultFromProbeRows(rows: UpstreamProbeRow[]): Doct
         promptCount: r.prompts?.length,
         promptNames: r.prompts?.map((p) => p.name),
         resourceCount: r.resourceCount,
+        resourceTemplateCount: r.resourceTemplateCount,
       };
     }
     return { serverKey: r.serverKey, ok: false, error: r.error };

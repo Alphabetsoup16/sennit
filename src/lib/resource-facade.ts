@@ -41,3 +41,16 @@ export function parseFacadeResourceUri(facadeUri: string): { serverKey: string; 
   const p = decodePayload(facadeUri);
   return p ? { serverKey: p.k, upstreamUri: p.u } : null;
 }
+
+const TPL_PREFIX = "urn:sennit:rt:v1:";
+
+/**
+ * RFC 6570 URI template for the facade: expanded variable `u` must be the **concrete** upstream
+ * resource URI (so `readResource` can be forwarded unchanged).
+ */
+export function facadeResourceTemplatePattern(serverKey: string, upstreamUriTemplate: string): string {
+  const payload = Buffer.from(JSON.stringify({ k: serverKey, t: upstreamUriTemplate }), "utf8").toString(
+    "base64url",
+  );
+  return `${TPL_PREFIX}${payload}/{+u}`;
+}

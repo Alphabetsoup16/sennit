@@ -19,4 +19,31 @@ describe("formatInspectUpstreamsHumanLines", () => {
     ]);
     expect(lines.some((l) => l.includes("2 tools; 3 resources"))).toBe(true);
   });
+
+  it("renders resource template counts when present", () => {
+    const lines = formatInspectUpstreamsHumanLines([
+      {
+        serverKey: "a",
+        ok: true,
+        toolCount: 1,
+        toolNames: ["t1"],
+        resourceCount: 1,
+        resourceTemplateCount: 2,
+      },
+    ]);
+    expect(lines.some((l) => l.includes("1 resources; 2 resource templates"))).toBe(true);
+  });
+
+  it("renders template-only counts when static resource count is absent", () => {
+    const lines = formatInspectUpstreamsHumanLines([
+      {
+        serverKey: "a",
+        ok: true,
+        toolCount: 0,
+        toolNames: [],
+        resourceTemplateCount: 3,
+      },
+    ]);
+    expect(lines.some((l) => l.includes("; 3 resource templates"))).toBe(true);
+  });
 });

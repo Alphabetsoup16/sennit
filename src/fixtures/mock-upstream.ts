@@ -2,7 +2,7 @@
  * Minimal MCP server for integration tests: `mock.ping`, `mock.echo`.
  * Run: `node dist/fixtures/mock-upstream.js` (after `npm run build`).
  */
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
@@ -35,6 +35,17 @@ async function main(): Promise<void> {
     async () => ({
       contents: [{ uri: "file:///mock/readme.md", text: "# mock\n" }],
     }),
+  );
+
+  mcp.registerResource(
+    "mock.dynamic",
+    new ResourceTemplate("file:///mock/dynamic/{name}", { list: undefined }),
+    { description: "Template for files under file:///mock/dynamic/", mimeType: "text/plain" },
+    async (_uri, variables) => {
+      const name = String(variables.name ?? "");
+      const uri = `file:///mock/dynamic/${name}`;
+      return { contents: [{ uri, text: `dynamic:${name}` }] };
+    },
   );
 
   mcp.registerTool(

@@ -46,7 +46,8 @@
   "files": [
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "sennit.config.example.yaml"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
