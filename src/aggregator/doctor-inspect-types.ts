@@ -6,6 +6,9 @@ export type DoctorInspectUpstream = {
   error?: string;
   toolCount?: number;
   toolNames?: string[];
+  /** Present when upstream advertises prompts and listing succeeded. */
+  promptCount?: number;
+  promptNames?: string[];
   /** Present when upstream supports `resources/list` and listing succeeded. */
   resourceCount?: number;
 };

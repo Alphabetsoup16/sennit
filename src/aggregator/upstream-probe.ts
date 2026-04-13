@@ -1,15 +1,19 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { errorMessage } from "../lib/error-message.js";
+import { listAllPrompts } from "./list-prompts.js";
 import { listAllResources } from "./list-resources.js";
 import type { DoctorInspectResult, DoctorInspectUpstream } from "./doctor-inspect-types.js";
 import type { UpstreamHub } from "./upstream-hub.js";
 
 type ListedTool = Awaited<ReturnType<Client["listTools"]>>["tools"][number];
+type ListedPrompt = Awaited<ReturnType<Client["listPrompts"]>>["prompts"][number];
 
 export type UpstreamProbeOkRow = {
   serverKey: string;
   ok: true;
   tools: ListedTool[];
+  /** Present when upstream advertises `prompts` and listing succeeded. */
+  prompts?: ListedPrompt[];
   resourceCount?: number;
 };
 
@@ -26,9 +30,14 @@ export type UpstreamProbeRow = UpstreamProbeOkRow | UpstreamProbeErrRow;
  * Per-upstream failures are captured in rows (doctor-inspect semantics), not thrown.
  */
 export async function probeConnectedHub(hub: UpstreamHub): Promise<UpstreamProbeRow[]> {
+  const keys = hub.configuredServerKeys();
   return Promise.all(
-    hub.entries().map(async ([serverKey, client]) => {
+    keys.map(async (serverKey) => {
       try {
+        const client = await hub.ensureClient(serverKey);
+        if (!client) {
+          return { serverKey, ok: false as const, error: `unknown serverKey: ${serverKey}` };
+        }
         const { tools } = await client.listTools();
         let resourceCount: number | undefined;
         try {
@@ -37,7 +46,15 @@ export async function probeConnectedHub(hub: UpstreamHub): Promise<UpstreamProbe
         } catch {
           // Upstream may not advertise resources — omit resourceCount.
         }
-        return { serverKey, ok: true as const, tools, resourceCount };
+        let prompts: ListedPrompt[] | undefined;
+        if (client.getServerCapabilities()?.prompts) {
+          try {
+            prompts = await listAllPrompts(client);
+          } catch {
+            prompts = [];
+          }
+        }
+        return { serverKey, ok: true as const, tools, prompts, resourceCount };
       } catch (e) {
         return { serverKey, ok: false as const, error: errorMessage(e) };
       }
@@ -54,6 +71,8 @@ export function doctorInspectResultFromProbeRows(rows: UpstreamProbeRow[]): Doct
         ok: true,
         toolCount: toolNames.length,
         toolNames,
+        promptCount: r.prompts?.length,
+        promptNames: r.prompts?.map((p) => p.name),
         resourceCount: r.resourceCount,
       };
     }
@@ -72,4 +91,19 @@ export function toolCatalogsFromProbeRowsOrThrow(rows: UpstreamProbeRow[]): Arra
     throw new Error(firstBad.error);
   }
   return (rows as UpstreamProbeOkRow[]).map((r) => ({ serverKey: r.serverKey, tools: r.tools }));
+}
+
+/** Prompt catalogs for registration; throws if any probe row failed (createAggregator semantics). */
+export function promptCatalogsFromProbeRowsOrThrow(rows: UpstreamProbeRow[]): Array<{
+  serverKey: string;
+  prompts: ListedPrompt[];
+}> {
+  const firstBad = rows.find((r): r is UpstreamProbeErrRow => !r.ok);
+  if (firstBad) {
+    throw new Error(firstBad.error);
+  }
+  return (rows as UpstreamProbeOkRow[]).map((r) => ({
+    serverKey: r.serverKey,
+    prompts: r.prompts ?? [],
+  }));
 }

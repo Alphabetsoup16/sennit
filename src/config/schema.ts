@@ -21,15 +21,62 @@ export const stdioServerSchema = z.object({
   tools: z.array(z.string()).optional(),
   /** If set, only static resources whose upstream URI is listed are exposed (exact match). */
   resources: z.array(z.string()).optional(),
+  /** If set, only these upstream prompt names are exposed (from `prompts/list`). */
+  prompts: z.array(z.string()).optional(),
+  /**
+   * When true, this upstream is not spawned during `connect()`; the first probe or proxied call
+   * connects it (see `idleTimeoutMs` for disconnect-after-idle).
+   */
+  lazy: z.boolean().optional(),
+  /**
+   * After this many milliseconds without a proxied operation touching this upstream, disconnect
+   * it (the merged tool/resource/prompt catalog stays; the next call reconnects).
+   */
+  idleTimeoutMs: z.number().int().positive().optional(),
 });
 
 export type StdioServerConfig = z.infer<typeof stdioServerSchema>;
 
+/** Remote upstream using Streamable HTTP (MCP client transport). */
+export const streamableHttpServerSchema = z.object({
+  transport: z.literal("streamableHttp"),
+  url: z.string().url(),
+  /** Sent as HTTP headers on each MCP request (values redacted in `sennit plan` / `config print`). */
+  headers: z.record(z.string(), z.string()).optional(),
+  /** If set, only these upstream tool names are exposed. */
+  tools: z.array(z.string()).optional(),
+  /** If set, only these upstream resource URIs are exposed (exact match). */
+  resources: z.array(z.string()).optional(),
+  /** If set, only these upstream prompt names are exposed. */
+  prompts: z.array(z.string()).optional(),
+  lazy: z.boolean().optional(),
+  idleTimeoutMs: z.number().int().positive().optional(),
+});
+
+export type StreamableHttpServerConfig = z.infer<typeof streamableHttpServerSchema>;
+
+export const serverEntrySchema = z.discriminatedUnion("transport", [
+  stdioServerSchema,
+  streamableHttpServerSchema,
+]);
+
+export type ServerEntryConfig = z.infer<typeof serverEntrySchema>;
+
 export const sennitConfigSchema = z
   .object({
     version: z.literal(1),
-    servers: z.record(z.string(), stdioServerSchema).default({}),
+    servers: z.record(z.string(), serverEntrySchema).default({}),
     roots: rootsPolicySchema.default({ mode: "ignore" }),
+    /**
+     * When set, proxied tool descriptions in the merged `tools/list` are truncated to this many
+     * Unicode code units (ellipsis appended). Omit for full upstream descriptions.
+     */
+    toolsListDescriptionMaxChars: z.number().int().positive().optional(),
+    /**
+     * When true, subscribe to upstream `notifications/tools/list_changed` (if advertised) and call
+     * the host `sendToolListChanged`. Merged tool registrations are still fixed until reconnect.
+     */
+    dynamicToolList: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
     for (const key of Object.keys(data.servers)) {

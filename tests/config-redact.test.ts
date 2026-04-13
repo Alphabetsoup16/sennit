@@ -16,8 +16,11 @@ describe("redactSennitConfig", () => {
       },
     });
     const r = redactSennitConfig(c);
-    expect(r.servers.a.env).toEqual({ SECRET: REDACTED_VALUE, OTHER: REDACTED_VALUE });
-    expect(r.servers.a.command).toBe("node");
+    expect(r.servers.a.transport).toBe("stdio");
+    if (r.servers.a.transport === "stdio") {
+      expect(r.servers.a.env).toEqual({ SECRET: REDACTED_VALUE, OTHER: REDACTED_VALUE });
+      expect(r.servers.a.command).toBe("node");
+    }
   });
 
   it("leaves servers without env unchanged", () => {
@@ -26,7 +29,31 @@ describe("redactSennitConfig", () => {
       servers: { b: { transport: "stdio", command: "true", args: [] } },
     });
     const r = redactSennitConfig(c);
-    expect(r.servers.b.env).toBeUndefined();
+    expect(r.servers.b.transport).toBe("stdio");
+    if (r.servers.b.transport === "stdio") {
+      expect(r.servers.b.env).toBeUndefined();
+    }
+  });
+
+  it("redacts streamableHttp header values", () => {
+    const c = sennitConfigSchema.parse({
+      version: 1,
+      servers: {
+        remote: {
+          transport: "streamableHttp",
+          url: "https://example.com/mcp",
+          headers: { Authorization: "Bearer secret", "X-Other": "a" },
+        },
+      },
+    });
+    const r = redactSennitConfig(c);
+    expect(r.servers.remote.transport).toBe("streamableHttp");
+    if (r.servers.remote.transport === "streamableHttp") {
+      expect(r.servers.remote.headers).toEqual({
+        Authorization: REDACTED_VALUE,
+        "X-Other": REDACTED_VALUE,
+      });
+    }
   });
 
   it("redacts roots.allowUriPrefixes entries", () => {

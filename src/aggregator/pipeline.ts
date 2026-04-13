@@ -7,12 +7,16 @@ import { errorMessage } from "../lib/error-message.js";
 import { jsonText } from "../lib/json-text.js";
 import { BATCH_CALL_MAX_ITEMS } from "../lib/limits.js";
 import { takeUniqueMergedToolId, TOOL_NAMESPACE_SEPARATOR } from "../lib/namespace.js";
+import { sennitJsonLog } from "../lib/sennit-json-log.js";
+import { truncateForToolList } from "../lib/truncate-tool-description.js";
 import { VERSION } from "../lib/version.js";
 import { executeBatchCall } from "./batch.js";
 import type { DoctorInspectResult } from "./doctor-inspect-types.js";
+import { zodShapeFromPromptArguments } from "./prompt-args-from-listing.js";
 import {
   doctorInspectResultFromProbeRows,
   probeConnectedHub,
+  promptCatalogsFromProbeRowsOrThrow,
   toolCatalogsFromProbeRowsOrThrow,
   type UpstreamProbeRow,
 } from "./upstream-probe.js";
@@ -20,7 +24,9 @@ import { looseToolArgumentsSchema, proxyToolInputSchema } from "./proxy-input-sc
 import { registerProxyResources, resourceNamespacingSummary } from "./register-resources.js";
 import type { UpstreamRootsBridge } from "./roots-bridge.js";
 import { makeUpstreamRootsBridge } from "./roots-bridge.js";
+import { makeUpstreamElicitationBridge } from "./elicitation-bridge.js";
 import { makeUpstreamSamplingBridge } from "./sampling-bridge.js";
+import { makeUpstreamToolListChangedBridge } from "./tool-list-changed-bridge.js";
 import { UpstreamHub } from "./upstream-hub.js";
 
 const batchInputSchema = z.object({
@@ -39,6 +45,7 @@ const batchInputSchema = z.object({
 });
 
 type ListedTool = Awaited<ReturnType<Client["listTools"]>>["tools"][number];
+type ListedPrompt = Awaited<ReturnType<Client["listPrompts"]>>["prompts"][number];
 
 export type AggregatorHandle = {
   mcp: McpServer;
@@ -52,11 +59,18 @@ export function createMcpAndHub(config: SennitConfig): {
 } {
   const mcp = new McpServer(
     { name: "sennit", version: VERSION },
-    { capabilities: { tools: {} } },
+    { capabilities: { tools: {}, prompts: {} } },
   );
   const rootsBridge = makeUpstreamRootsBridge(config, mcp);
   const samplingBridge = makeUpstreamSamplingBridge(mcp);
-  const hub = new UpstreamHub(rootsBridge, samplingBridge);
+  const elicitationBridge = makeUpstreamElicitationBridge(mcp);
+  const toolListChangedBridge = makeUpstreamToolListChangedBridge(mcp);
+  const hub = new UpstreamHub(
+    rootsBridge,
+    samplingBridge,
+    elicitationBridge,
+    toolListChangedBridge,
+  );
   return { mcp, hub, rootsBridge };
 }
 
@@ -68,6 +82,7 @@ export async function registerAggregatorSurface(
   hub: UpstreamHub,
   config: SennitConfig,
   upstreamToolCatalogs: Array<{ serverKey: string; tools: ListedTool[] }>,
+  upstreamPromptCatalogs: Array<{ serverKey: string; prompts: ListedPrompt[] }>,
   rootsBridge: UpstreamRootsBridge | undefined,
 ): Promise<void> {
   mcp.registerTool(
@@ -85,9 +100,15 @@ export async function registerAggregatorSurface(
             sennitVersion: VERSION,
             upstreamServerKeys: hub.serverKeys(),
             roots: config.roots,
-            namespacing: `Proxied tools are {serverKey}${TOOL_NAMESPACE_SEPARATOR}{upstreamToolName}. Server keys must not contain ${TOOL_NAMESPACE_SEPARATOR}.`,
+            namespacing: `Proxied tools and prompts use {serverKey}${TOOL_NAMESPACE_SEPARATOR}{upstreamName}. Server keys must not contain ${TOOL_NAMESPACE_SEPARATOR}.`,
             sampling:
               "Upstream servers may call sampling/createMessage during proxied work; Sennit forwards to the host client when it declares the sampling capability (including sampling.tools for tool loops).",
+            toolsListDescriptionMaxChars: config.toolsListDescriptionMaxChars ?? null,
+            dynamicToolList: config.dynamicToolList ?? false,
+            lazyAndIdle:
+              "servers.*.lazy skips spawn at connect until probe or a proxied call; servers.*.idleTimeoutMs closes the upstream client after idle (next call reconnects; merged catalog unchanged until host reconnects to Sennit).",
+            elicitation:
+              "Upstream servers may call elicitation/create during proxied work; Sennit forwards to the host client when it declares elicitation (form and/or url).",
             resources: resourceNamespacingSummary(),
             ...(config.roots.mode !== "ignore"
               ? {
@@ -126,29 +147,116 @@ export async function registerAggregatorSurface(
 
       const full = takeUniqueMergedToolId(seen, serverKey, tool.name);
 
+      const rawDescription =
+        tool.description ?? `Proxied from upstream "${serverKey}" (tool: ${tool.name}).`;
+
       mcp.registerTool(
         full,
         {
-          description:
-            tool.description ??
-            `Proxied from upstream "${serverKey}" (tool: ${tool.name}).`,
+          description: truncateForToolList(rawDescription, config.toolsListDescriptionMaxChars),
           inputSchema: proxyToolInputSchema(tool.inputSchema),
         },
         async (args) => {
-          const c = hub.get(serverKey);
+          const c = await hub.ensureClient(serverKey);
           if (!c) {
             return {
               content: [{ type: "text", text: `upstream missing: ${serverKey}` }],
               isError: true,
             };
           }
-          const out = await c.callTool({
-            name: tool.name,
-            arguments: (args as Record<string, unknown>) ?? {},
-          });
-          return out as CallToolResult;
+          const t0 = Date.now();
+          try {
+            const out = await c.callTool({
+              name: tool.name,
+              arguments: (args as Record<string, unknown>) ?? {},
+            });
+            sennitJsonLog("tool_proxy_ok", {
+              serverKey,
+              tool: tool.name,
+              ms: Date.now() - t0,
+            });
+            hub.touchActivity(serverKey);
+            return out as CallToolResult;
+          } catch (e) {
+            sennitJsonLog("tool_proxy_err", {
+              serverKey,
+              tool: tool.name,
+              ms: Date.now() - t0,
+              error: errorMessage(e),
+            });
+            throw e;
+          }
         },
       );
+    }
+  }
+
+  const seenPrompts = new Set<string>();
+  for (const { serverKey, prompts } of upstreamPromptCatalogs) {
+    const allow = config.servers[serverKey]?.prompts;
+
+    for (const prompt of prompts) {
+      if (allow && !allow.includes(prompt.name)) {
+        continue;
+      }
+
+      const full = takeUniqueMergedToolId(seenPrompts, serverKey, prompt.name);
+      const shape = zodShapeFromPromptArguments(prompt);
+      const description =
+        prompt.description ??
+        `Proxied from upstream "${serverKey}" (prompt: ${prompt.name}).`;
+
+      if (Object.keys(shape).length === 0) {
+        mcp.registerPrompt(
+          full,
+          { description, title: prompt.title },
+          async () => {
+            const c = await hub.ensureClient(serverKey);
+            if (!c) {
+              return {
+                messages: [
+                  {
+                    role: "user",
+                    content: { type: "text", text: `upstream missing: ${serverKey}` },
+                  },
+                ],
+              };
+            }
+            const r = await c.getPrompt({ name: prompt.name, arguments: {} });
+            hub.touchActivity(serverKey);
+            return r;
+          },
+        );
+      } else {
+        mcp.registerPrompt(
+          full,
+          { description, title: prompt.title, argsSchema: shape },
+          async (args) => {
+            const c = await hub.ensureClient(serverKey);
+            if (!c) {
+              return {
+                messages: [
+                  {
+                    role: "user",
+                    content: { type: "text", text: `upstream missing: ${serverKey}` },
+                  },
+                ],
+              };
+            }
+            const stringArgs = Object.fromEntries(
+              Object.entries(args as Record<string, unknown>)
+                .filter(([, v]) => v !== undefined && v !== null)
+                .map(([k, v]) => [k, String(v)]),
+            ) as Record<string, string>;
+            const r = await c.getPrompt({
+              name: prompt.name,
+              arguments: stringArgs,
+            });
+            hub.touchActivity(serverKey);
+            return r;
+          },
+        );
+      }
     }
   }
 
@@ -176,7 +284,8 @@ export async function createAggregator(config: SennitConfig): Promise<Aggregator
     await hub.connect(config);
     const rows = await probeConnectedHub(hub);
     const catalogs = toolCatalogsFromProbeRowsOrThrow(rows);
-    await registerAggregatorSurface(mcp, hub, config, catalogs, rootsBridge);
+    const promptCatalogs = promptCatalogsFromProbeRowsOrThrow(rows);
+    await registerAggregatorSurface(mcp, hub, config, catalogs, promptCatalogs, rootsBridge);
     return finalizeAggregatorHandle(mcp, hub);
   } catch (e) {
     await hub.close().catch(() => undefined);

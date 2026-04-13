@@ -20,7 +20,7 @@ export function registerPlan(program: Command): void {
   program
     .command("plan")
     .description(
-      "Dry-run: resolved config (redacted), per-upstream tools/list + resources/list, merged host-facing tool and resource catalogs",
+      "Dry-run: resolved config (redacted), per-upstream tools/resources/prompts lists, merged host-facing catalogs",
     )
     .option(OPT_CONFIG_PATH, DESC_CONFIG_PATH_RESOLVE)
     .option(OPT_JSON, DESC_JSON)
@@ -52,7 +52,7 @@ export function registerPlan(program: Command): void {
         );
         process.stdout.write("## Resolved config (roots allowUriPrefixes + env redacted)\n");
         process.stdout.write(YAML.stringify(result.config, { indent: 2 }));
-        process.stdout.write("\n## Upstream reachability (raw tools/list; resources/list when supported)\n");
+        process.stdout.write("\n## Upstream reachability (tools/list; resources + prompts when supported)\n");
         for (const line of formatInspectUpstreamsHumanLines(result.inspect.upstreams, {
           fatalError: result.inspect.fatalError,
         })) {
@@ -76,6 +76,16 @@ export function registerPlan(program: Command): void {
           for (const r of result.mergedResources) {
             const desc = r.description ? ` — ${r.description}` : "";
             process.stdout.write(`  ${r.name} <${r.uri}>${desc}\n`);
+          }
+        }
+        process.stdout.write("\n## Merged prompt catalog (host-facing)\n");
+        if (result.mergedError) {
+          process.stdout.write(`  (skipped — aggregator error above)\n`);
+        } else if (result.mergedPrompts) {
+          process.stdout.write(`  count: ${result.mergedPrompts.length}\n`);
+          for (const p of result.mergedPrompts) {
+            const desc = p.description ? ` — ${p.description}` : "";
+            process.stdout.write(`  ${p.name}${desc}\n`);
           }
         }
         process.stdout.write(`\nstatus: ${ok ? "ok" : "issues found"}\n`);

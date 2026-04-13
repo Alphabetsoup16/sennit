@@ -9,7 +9,23 @@ import { z } from "zod";
 async function main(): Promise<void> {
   const mcp = new McpServer(
     { name: "mock-upstream", version: "0.0.1" },
-    { capabilities: { tools: {}, resources: {} } },
+    { capabilities: { tools: {}, resources: {}, prompts: {} } },
+  );
+
+  mcp.registerPrompt(
+    "mock.greet",
+    {
+      description: "Builds a greeting user message.",
+      argsSchema: { name: z.string() },
+    },
+    async ({ name }) => ({
+      messages: [
+        {
+          role: "user",
+          content: { type: "text", text: `Please greet ${name} kindly.` },
+        },
+      ],
+    }),
   );
 
   mcp.registerResource(

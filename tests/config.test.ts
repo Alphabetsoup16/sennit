@@ -19,7 +19,7 @@ describe("sennitConfigSchema", () => {
         a: { transport: "stdio", command: "node", args: ["a.js"] },
       },
     });
-    expect(c.servers.a.command).toBe("node");
+    expect(c.servers.a).toMatchObject({ transport: "stdio", command: "node" });
   });
 
   it("defaults roots to ignore when omitted", () => {
@@ -46,6 +46,19 @@ describe("sennitConfigSchema", () => {
         },
       }),
     ).toThrow(/server key must not contain/);
+  });
+
+  it("accepts streamableHttp server", () => {
+    const c = sennitConfigSchema.parse({
+      version: 1,
+      servers: {
+        r: { transport: "streamableHttp", url: "https://mcp.example.com/v1" },
+      },
+    });
+    expect(c.servers.r).toMatchObject({
+      transport: "streamableHttp",
+      url: "https://mcp.example.com/v1",
+    });
   });
 
   it("accepts optional servers.*.resources allowlist", () => {
@@ -98,7 +111,7 @@ describe("loadConfigFile", () => {
       "utf8",
     );
     const c = loadConfigFile(path);
-    expect(c.servers.t.command).toBe("echo");
+    expect(c.servers.t).toMatchObject({ transport: "stdio", command: "echo" });
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -114,7 +127,7 @@ describe("loadConfigFile", () => {
       "utf8",
     );
     const c = loadConfigFile(path);
-    expect(c.servers.j.command).toBe("node");
+    expect(c.servers.j).toMatchObject({ transport: "stdio", command: "node" });
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -127,7 +140,7 @@ describe("loadConfigFile", () => {
       "utf8",
     );
     const c = loadConfigFile(path);
-    expect(c.servers.t.command).toBe("whoami");
+    expect(c.servers.t).toMatchObject({ transport: "stdio", command: "whoami" });
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -143,7 +156,7 @@ describe("loadConfigFile", () => {
       "utf8",
     );
     const c = loadConfigFile(path);
-    expect(c.servers.x.command).toBe("sh");
+    expect(c.servers.x).toMatchObject({ transport: "stdio", command: "sh" });
     rmSync(dir, { recursive: true, force: true });
   });
 });

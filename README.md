@@ -64,10 +64,13 @@ npx sennit serve -c examples/sennit.config.example.yaml   # needs build: mock in
 | Field | Meaning |
 |-------|---------|
 | **`version`** | **`1`** |
-| **`servers.<key>`** | **`transport: stdio`**, **`command`**, **`args?`**, **`env?`**, **`cwd?`**, **`tools?`**, **`resources?`** |
-| **`tools`** | Optional allowlist of upstream tool names; else all from **`tools/list`**. |
-| **`resources`** | Optional allowlist of upstream resource URIs (exact match); else all from **`resources/list`**. |
+| **`servers.<key>`** | **`transport: stdio`** (**`command`**, **`args?`**, **`env?`**, **`cwd?`**) or **`transport: streamableHttp`** (**`url`**, **`headers?`**). Optional per server: **`tools?`**, **`resources?`**, **`prompts?`**, **`lazy?`**, **`idleTimeoutMs?`**. |
+| **`tools` / `resources` / `prompts`** | Optional allowlists; omit = expose all listed by upstream. |
+| **`toolsListDescriptionMaxChars`** | Optional cap on merged tool description length (host **`tools/list`** only). |
+| **`dynamicToolList`** | When **`true`**, forward upstream **`tools/list_changed`** hints to the host (**`sendToolListChanged`**); merged registrations stay fixed until host reconnects to Sennit. |
 | **`roots`** | **`mode`**: **`ignore`** (default) \| **`forward`** \| **`intersect`**. **`intersect`** requires non-empty **`allowUriPrefixes`**. Controls what upstreams see for **`roots/list`**. |
+
+Set **`SENNIT_LOG=json`** to emit one JSON log line per proxied tool call (**`tool_proxy_ok`** / **`tool_proxy_err`**) on stderr.
 
 **Config resolution** (first hit wins): **`--config`** → **`SENNIT_CONFIG`** → **`./sennit.config.yaml`** / **`.yml`** → per-user file (**`sennit config path`**) → empty **`servers`** (only **`sennit.meta`** + **`sennit.batch_call`**).
 
@@ -77,14 +80,15 @@ Per-user default paths: macOS **`~/Library/Application Support/sennit/config.yam
 
 | Name | Role |
 |------|------|
-| **`sennit.meta`** | JSON: version, upstream keys, naming rules for tools/resources |
+| **`sennit.meta`** | JSON: version, upstream keys, naming rules, roots/sampling/elicitation/lazy-idle notes |
 | **`sennit.batch_call`** | Parallel **`callTool`** by **`serverKey`** + upstream **`toolName`** |
 | **`{key}__{tool}`** | Proxy to one upstream tool |
+| **`{key}__{prompt}`** | Proxy to one upstream prompt (**`prompts/get`**) |
 | **`{key}__{resource}`** + façade URI | Static resource from upstream; **`resources/read`** proxied. Upstream **resource templates** not merged yet. |
 
 ## Roadmap (short)
 
-Done: stdio upstreams, tools + static resources merge, roots modes above, **sampling passthrough** (upstream → host when the host declares sampling). Not done: prompts, roots **`map`**, notifications, elicitation, HTTP/SSE upstreams — see [`docs/EXTENDING.md`](docs/EXTENDING.md).
+Done: stdio + **Streamable HTTP** upstreams, tools/resources/**prompts** merge, roots modes, **sampling** + **elicitation** passthrough, **lazy** upstreams, **idle** disconnect, optional **dynamicToolList** hint, **`SENNIT_LOG`**. Not done: roots **`map`**, resource templates merge, incoming HTTP listener for the facade — see [`docs/EXTENDING.md`](docs/EXTENDING.md).
 
 ## Repo map
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { executeBatchCall } from "../src/aggregator/batch.js";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import type { UpstreamHub } from "../src/aggregator/upstream-hub.js";
 
 function stubHub(
   impl: Record<
@@ -11,9 +12,9 @@ function stubHub(
       options?: { signal?: AbortSignal },
     ) => Promise<unknown>
   >,
-): { get: (k: string) => Client | undefined } {
-  return {
-    get(key: string) {
+): UpstreamHub {
+  const hub = {
+    async ensureClient(key: string) {
       const fn = impl[key];
       if (!fn) return undefined;
       return {
@@ -24,7 +25,9 @@ function stubHub(
         ) => fn(params.name, params.arguments, options) as ReturnType<Client["callTool"]>,
       } as Client;
     },
+    touchActivity: () => undefined,
   };
+  return hub as unknown as UpstreamHub;
 }
 
 describe("executeBatchCall", () => {

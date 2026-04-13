@@ -16,8 +16,9 @@ export function formatInspectUpstreamsHumanLines(
   for (const u of upstreams) {
     if (u.ok) {
       const resPart = u.resourceCount !== undefined ? `; ${u.resourceCount} resources` : "";
+      const promptPart = u.promptCount !== undefined ? `; ${u.promptCount} prompts` : "";
       lines.push(
-        `  ${u.serverKey}: ok (${u.toolCount ?? 0} tools${resPart}) — ${(u.toolNames ?? []).join(", ") || "(none)"}`,
+        `  ${u.serverKey}: ok (${u.toolCount ?? 0} tools${promptPart}${resPart}) — ${(u.toolNames ?? []).join(", ") || "(none)"}`,
       );
     } else {
       lines.push(`  ${u.serverKey}: error — ${u.error ?? "unknown"}`);

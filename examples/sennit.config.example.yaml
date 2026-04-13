@@ -1,5 +1,9 @@
 # Sennit — example config (npm package: sennit)
 version: 1
+# Optional: cap length of merged tool descriptions (Unicode code units) for smaller `tools/list` payloads.
+# toolsListDescriptionMaxChars: 400
+# Optional: notify host when upstreams signal tools/list_changed (registrations still fixed until reconnect).
+# dynamicToolList: true
 # Optional: how upstream MCP servers see workspace roots (modes: ignore | forward | intersect — see root README).
 # roots:
 #   mode: ignore        # ignore | forward | intersect (default when omitted: ignore)
@@ -12,7 +16,15 @@ servers:
   #   args: ["-y", "@some/mcp-server"]
   #   tools: ["search", "fetch"]   # optional allowlist; omit = all tools
   #   resources: ["file:///mock/readme.md"]   # optional; exact upstream URIs from resources/list
+  #   prompts: ["greeting"]   # optional; upstream prompt names from prompts/list
   mock:
     transport: stdio
     command: node
     args: ["dist/fixtures/mock-upstream.js"]
+  # remote:
+  #   transport: streamableHttp
+  #   url: https://example.com/mcp
+  #   headers:
+  #     Authorization: Bearer ${YOUR_TOKEN}
+  #   lazy: true
+  #   idleTimeoutMs: 600000

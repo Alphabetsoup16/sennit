@@ -30,7 +30,11 @@ export async function registerProxyResources(
   const seenRegistrationNames = new Set<string>();
   const seenFacadeUris = new Set<string>();
 
-  for (const [serverKey, client] of hub.entries()) {
+  for (const serverKey of hub.configuredServerKeys()) {
+    const client = await hub.ensureClient(serverKey);
+    if (!client) {
+      continue;
+    }
     let resources: Awaited<ReturnType<typeof listAllResources>>;
     try {
       resources = await listAllResources(client);
@@ -86,12 +90,13 @@ export async function registerProxyResources(
         title: row.title,
       },
       async () => {
-        const c = hub.get(row.serverKey);
+        const c = await hub.ensureClient(row.serverKey);
         if (!c) {
           throw new Error(`upstream missing: ${row.serverKey}`);
         }
         try {
           const result = await c.readResource({ uri: row.upstreamUri });
+          hub.touchActivity(row.serverKey);
           return {
             contents: result.contents.map((item) => ({
               ...item,

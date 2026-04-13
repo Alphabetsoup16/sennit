@@ -27,14 +27,29 @@ Today only **stdio** exists in [`src/aggregator/upstream-hub.ts`](../src/aggrega
 2. Branch in `UpstreamHub.connect()` to construct `Client` + the right transport.
 3. Add tests with a mock HTTP server or SDK test utilities.
 
-## Sampling passthrough (upstream → host)
+## Sampling / elicitation passthrough (upstream → host)
 
-Sennit forwards upstream [`sampling/createMessage`](https://modelcontextprotocol.io/specification/draft/client/sampling) to the **host** MCP client using the same bridge pattern as roots:
+Sennit forwards upstream [`sampling/createMessage`](https://modelcontextprotocol.io/specification/draft/client/sampling) and [`elicitation/create`](https://modelcontextprotocol.io/specification/2025-11-25/client/elicitation) to the **host** MCP client using the same bridge pattern as roots:
 
-- [`src/aggregator/sampling-bridge.ts`](../src/aggregator/sampling-bridge.ts) — `makeUpstreamSamplingBridge(mcp)` → `mcp.server.createMessage(params)`
-- [`src/aggregator/upstream-hub.ts`](../src/aggregator/upstream-hub.ts) — upstream `Client` instances declare `sampling.tools` and register `CreateMessageRequestSchema` after connect
+- [`src/aggregator/sampling-bridge.ts`](../src/aggregator/sampling-bridge.ts) — `mcp.server.createMessage`
+- [`src/aggregator/elicitation-bridge.ts`](../src/aggregator/elicitation-bridge.ts) — `mcp.server.elicitInput`
+- [`src/aggregator/upstream-hub.ts`](../src/aggregator/upstream-hub.ts) — capability declarations + `setRequestHandler` after transport connect
 
-The **host** must declare client `capabilities.sampling` (and `sampling.tools` if upstreams use tool loops). Doctor-only probes use `new UpstreamHub()` with no bridge so they do not pretend to support sampling.
+The **host** must declare the matching client capabilities. Doctor-only probes use `new UpstreamHub()` with no bridges.
+
+## Lazy upstreams, idle disconnect, HTTP
+
+- **`servers.*.lazy`**: skipped in `connect()`; [`ensureClient`](../src/aggregator/upstream-hub.ts) connects on probe or first proxied use.
+- **`servers.*.idleTimeoutMs`**: [`touchActivity`](../src/aggregator/upstream-hub.ts) arms a timer after successful proxied calls; idle closes the client (catalog unchanged until the host reconnects to Sennit).
+- **`transport: streamableHttp`**: [`StreamableHTTPClientTransport`](../src/aggregator/upstream-hub.ts) from the SDK; optional static **`headers`** (redacted in `config print`).
+
+## Dynamic tool list hint
+
+When **`dynamicToolList`** is true, upstream MCP clients subscribe to tool list-changed notifications (if advertised) and call [`sendToolListChanged`](../src/aggregator/tool-list-changed-bridge.ts). Merged tool registrations are still fixed at aggregator startup.
+
+## Structured logs
+
+Set **`SENNIT_LOG=json`** for one JSON line per proxied tool call ([`src/lib/sennit-json-log.ts`](../src/lib/sennit-json-log.ts)).
 
 ## Add a built-in MCP tool (on the aggregator)
 

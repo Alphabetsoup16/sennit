@@ -7,8 +7,12 @@ import {
   registerAggregatorSurface,
   type AggregatorHandle,
 } from "../aggregator/build-server.js";
+import { listAllPrompts } from "../aggregator/list-prompts.js";
 import { listAllResources } from "../aggregator/list-resources.js";
-import { toolCatalogsFromProbeRowsOrThrow } from "../aggregator/upstream-probe.js";
+import {
+  promptCatalogsFromProbeRowsOrThrow,
+  toolCatalogsFromProbeRowsOrThrow,
+} from "../aggregator/upstream-probe.js";
 import type { SennitConfig } from "../config/schema.js";
 import { errorMessage } from "../lib/error-message.js";
 import type { DoctorInspectResult } from "../aggregator/doctor-inspect-types.js";
@@ -17,6 +21,8 @@ import { redactSennitConfig } from "./config-redact.js";
 export type PlanMergedTool = { name: string; description?: string };
 
 export type PlanMergedResource = { name: string; uri: string; description?: string };
+
+export type PlanMergedPrompt = { name: string; description?: string; title?: string };
 
 export type PlanRunResult = {
   schemaVersion: 1;
@@ -27,18 +33,17 @@ export type PlanRunResult = {
   mergedTools?: PlanMergedTool[];
   mergedError?: string;
   mergedResources?: PlanMergedResource[];
+  mergedPrompts?: PlanMergedPrompt[];
 };
 
 async function captureMergedCatalog(handle: AggregatorHandle): Promise<{
   mergedTools: PlanMergedTool[];
   mergedResources: PlanMergedResource[];
+  mergedPrompts: PlanMergedPrompt[];
 }> {
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await handle.mcp.connect(serverSide);
-  const client = new Client(
-    { name: "sennit-plan", version: "1.0.0" },
-    { capabilities: {} },
-  );
+  const client = new Client({ name: "sennit-plan", version: "1.0.0" }, { capabilities: {} });
   await client.connect(clientSide);
   try {
     const { tools } = await client.listTools();
@@ -57,7 +62,18 @@ async function captureMergedCatalog(handle: AggregatorHandle): Promise<{
     } catch {
       mergedResources = [];
     }
-    return { mergedTools, mergedResources };
+    let mergedPrompts: PlanMergedPrompt[];
+    try {
+      const prompts = await listAllPrompts(client);
+      mergedPrompts = prompts.map((p) => ({
+        name: p.name,
+        description: p.description,
+        title: p.title,
+      }));
+    } catch {
+      mergedPrompts = [];
+    }
+    return { mergedTools, mergedResources, mergedPrompts };
   } finally {
     await client.close();
   }
@@ -80,15 +96,18 @@ export async function runPlan(
   let mergedTools: PlanMergedTool[] | undefined;
   let mergedError: string | undefined;
   let mergedResources: PlanMergedResource[] | undefined;
+  let mergedPrompts: PlanMergedPrompt[] | undefined;
 
   if (!phase.fatal) {
     try {
       const catalogs = toolCatalogsFromProbeRowsOrThrow(phase.rows);
+      const promptCatalogs = promptCatalogsFromProbeRowsOrThrow(phase.rows);
       await registerAggregatorSurface(
         phase.mcp,
         phase.hub,
         config,
         catalogs,
+        promptCatalogs,
         phase.rootsBridge,
       );
       const handle = finalizeAggregatorHandle(phase.mcp, phase.hub);
@@ -96,6 +115,7 @@ export async function runPlan(
         const captured = await captureMergedCatalog(handle);
         mergedTools = captured.mergedTools;
         mergedResources = captured.mergedResources;
+        mergedPrompts = captured.mergedPrompts;
       } finally {
         await handle.close();
       }
@@ -111,6 +131,7 @@ export async function runPlan(
         const captured = await captureMergedCatalog(handle);
         mergedTools = captured.mergedTools;
         mergedResources = captured.mergedResources;
+        mergedPrompts = captured.mergedPrompts;
       } finally {
         await handle.close();
       }
@@ -127,6 +148,7 @@ export async function runPlan(
     mergedTools,
     mergedError,
     mergedResources,
+    mergedPrompts,
   };
 }
 

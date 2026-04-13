@@ -1,6 +1,6 @@
 # `src/aggregator`
 
-Host-facing **`McpServer`** plus **`UpstreamHub`** (one MCP **`Client`** per **`servers`** entry, stdio today). Implements **`sennit.meta`**, **`sennit.batch_call`**, namespaced tool proxies, merged static resources, and **sampling passthrough** (upstream `sampling/createMessage` → host via **`sampling-bridge.ts`**).
+Host-facing **`McpServer`** plus **`UpstreamHub`** (one MCP **`Client`** per **`servers`** entry: stdio or Streamable HTTP). Implements **`sennit.meta`**, **`sennit.batch_call`**, namespaced **tools / prompts / resources**, sampling + elicitation passthrough, optional **lazy** + **idle** lifecycle, and optional **`dynamicToolList`** forwarding.
 
 ```mermaid
 flowchart TB
@@ -32,8 +32,11 @@ flowchart TB
 | **`build-server.ts`** | Re-exports **`createAggregator`** and related entrypoints |
 | **`pipeline.ts`** | **`createMcpAndHub`**, **`registerAggregatorSurface`**, **`createAggregator`** wiring |
 | **`upstream-probe.ts`**, **`doctor-inspect-types.ts`** | Shared connect + **`tools/list`** probe (plan / doctor) |
-| **`upstream-hub.ts`** | **`StdioClientTransport`** + **`Client`** per server; optional **`roots/list`** and **`sampling/createMessage`** handlers |
-| **`sampling-bridge.ts`** | **`makeUpstreamSamplingBridge(mcp)`** — forwards sampling to **`mcp.server.createMessage`** (host client) |
+| **`upstream-hub.ts`** | **`StdioClientTransport`** or **`StreamableHTTPClientTransport`** + **`Client`**; **`ensureClient`** / **`touchActivity`**; bridges |
+| **`sampling-bridge.ts`** | **`makeUpstreamSamplingBridge(mcp)`** → **`mcp.server.createMessage`** |
+| **`elicitation-bridge.ts`** | **`makeUpstreamElicitationBridge(mcp)`** → **`mcp.server.elicitInput`** |
+| **`tool-list-changed-bridge.ts`** | **`sendToolListChanged`** when **`dynamicToolList`** |
+| **`list-prompts.ts`**, **`prompt-args-from-listing.ts`** | Paginated **`prompts/list`** + Zod args for **`registerPrompt`** |
 | **`roots-policy.ts`** | **`applyRootsPolicy`** — **`ignore`** / **`forward`** / **`intersect`** |
 | **`roots-bridge.ts`** | Host **`listRoots`** → policy → upstream |
 | **`batch.ts`** | **`executeBatchCall`** |
@@ -47,6 +50,7 @@ flowchart TB
 |---------|--------|
 | **`sennit.meta`**, **`sennit.batch_call`** | Built-in |
 | **`{serverKey}__{tool}`** | After **`servers.<key>.tools`** allowlist (if any) |
+| **`{serverKey}__{prompt}`** | After **`servers.<key>.prompts`** allowlist (if any) |
 | **`{serverKey}__{resource}`** | After **`servers.<key>.resources`** URI allowlist (if any) |
 
 **Startup:** **`listTools`** (and resource listing) runs **in parallel** across clients; catalog is **fixed after connect** (no hot reload unless the host reconnects).
