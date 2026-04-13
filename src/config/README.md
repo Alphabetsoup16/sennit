@@ -19,6 +19,8 @@ Each key is an upstream label (must not contain **`__`** — reserved for merged
 
 Tool, prompt, and resource names still come from each upstream’s MCP listings after connect; allowlists only **filter** what Sennit exposes.
 
+**`toolCallTimeoutMs`:** caps proxied **`tools/call`** duration; implemented via the MCP client **`AbortSignal`** so in-flight requests are cancelled on the wire (not only a timer rejecting locally). Applies to namespaced tool proxies and **`sennit.batch_call`**.
+
 ## `roots`
 
 Default **`{ mode: ignore }`**.

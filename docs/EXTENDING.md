@@ -37,6 +37,10 @@ Sennit forwards upstream [`sampling/createMessage`](https://modelcontextprotocol
 
 The **host** must declare the matching client capabilities. Doctor-only probes use `new UpstreamHub()` with no bridges.
 
+## Tool call timeouts (proxied + batch)
+
+Per-server **`toolCallTimeoutMs`** wraps upstream **`tools/call`** with [`withAbortTimeout`](../src/lib/with-timeout.ts): the MCP client **`AbortSignal`** triggers SDK cancellation (`notifications/cancelled`), not only a local promise race. [`pipeline.ts`](../src/aggregator/pipeline.ts) uses it for namespaced tools; [`batch.ts`](../src/aggregator/batch.ts) uses the same helper and composes with optional **`executeBatchCall` `signal`**.
+
 ## Lazy upstreams, idle disconnect, HTTP
 
 - **`servers.*.lazy`**: skipped in `connect()`; [`ensureClient`](../src/aggregator/upstream-hub.ts) connects on probe or first proxied use.

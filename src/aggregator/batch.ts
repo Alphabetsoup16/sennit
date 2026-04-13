@@ -1,3 +1,4 @@
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { errorMessage } from "../lib/error-message.js";
 import { withAbortTimeout } from "../lib/with-timeout.js";
 import type { UpstreamHub } from "./upstream-hub.js";
@@ -19,6 +20,25 @@ export type ExecuteBatchCallOptions = {
   maxConcurrency?: number;
   toolCallTimeoutMsForServer?: (serverKey: string) => number | undefined;
 };
+
+async function callToolForBatchItem(
+  client: Client,
+  item: BatchCallItem,
+  opts: { timeoutMs?: number; batchSignal?: AbortSignal },
+): Promise<unknown> {
+  const params = {
+    name: item.toolName,
+    arguments: (item.arguments ?? {}) as Record<string, unknown>,
+  };
+  if (opts.timeoutMs !== undefined) {
+    return withAbortTimeout(
+      opts.timeoutMs,
+      (signal) => client.callTool(params, undefined, { signal }),
+      opts.batchSignal,
+    );
+  }
+  return client.callTool(params, undefined, { signal: opts.batchSignal });
+}
 
 async function mapWithConcurrency<T, R>(
   items: readonly T[],
@@ -62,30 +82,10 @@ export async function executeBatchCall(
           error: `unknown serverKey: ${item.serverKey}`,
         };
       }
-      const timeoutMs = timeoutFor?.(item.serverKey);
-      const result =
-        timeoutMs !== undefined
-          ? await withAbortTimeout(
-              timeoutMs,
-              (signal) =>
-                client.callTool(
-                  {
-                    name: item.toolName,
-                    arguments: (item.arguments ?? {}) as Record<string, unknown>,
-                  },
-                  undefined,
-                  { signal },
-                ),
-              options?.signal,
-            )
-          : await client.callTool(
-              {
-                name: item.toolName,
-                arguments: (item.arguments ?? {}) as Record<string, unknown>,
-              },
-              undefined,
-              { signal: options?.signal },
-            );
+      const result = await callToolForBatchItem(client, item, {
+        timeoutMs: timeoutFor?.(item.serverKey),
+        batchSignal: options?.signal,
+      });
       hub.touchActivity(item.serverKey);
       return { clientCallId: item.clientCallId, ok: true, result };
     } catch (e) {
