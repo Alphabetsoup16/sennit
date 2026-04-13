@@ -1,11 +1,22 @@
 # `src/config`
 
-Zod schema + disk load (YAML / JSON).
+Zod schema and disk load (YAML / JSON). Operators use the CLI (**`sennit config validate`**, **`plan`**, **`doctor`**); this folder is the single source of truth for shape and defaults.
 
 | File | Role |
 |------|------|
-| **`schema.ts`** | **`sennitConfigSchema`**: **`version: 1`**, **`servers`** (stdio \| streamableHttp), **`roots`**, optional **`toolsListDescriptionMaxChars`**, **`dynamicToolList`** |
+| **`schema.ts`** | **`sennitConfigSchema`**: **`version: 1`**, **`servers`** (**`stdio`** \| **`streamableHttp`**), **`roots`**, optional **`toolsListDescriptionMaxChars`**, **`dynamicToolList`** |
 | **`load.ts`** | **`loadConfigFile`**: read by extension, **`schema.parse`** |
+
+## `servers`
+
+Each key is an upstream label (must not contain **`__`** — reserved for merged names).
+
+| Transport | Typical fields |
+|-----------|----------------|
+| **`stdio`** | **`command`**, **`args`**, optional **`env`**, **`cwd`**, **`tools` / `resources` / `prompts`**, **`lazy`**, **`idleTimeoutMs`** |
+| **`streamableHttp`** | **`url`**, optional **`headers`**, same allowlists and **`lazy` / `idleTimeoutMs`** |
+
+Tool, prompt, and resource names still come from each upstream’s MCP listings after connect; allowlists only **filter** what Sennit exposes.
 
 ## `roots`
 
@@ -14,13 +25,13 @@ Default **`{ mode: ignore }`**.
 | Mode | Effect |
 |------|--------|
 | **`ignore`** | Upstream clients do not advertise **`roots`** to upstream servers. |
-| **`forward`** | Pass host roots from **`mcp.server.listRoots()`** through to upstream **`roots/list`** responses. |
+| **`forward`** | Host roots from **`mcp.server.listRoots()`** are reflected in upstream **`roots/list`** responses per policy. |
 | **`intersect`** | Only roots whose **`uri`** starts with one of **`allowUriPrefixes`** (required, non-empty). |
 
 Maintainer contract (gitignored): **`private-docs/PASSTHROUGH-AND-MERGE.md`** — see [`private-docs/README.md`](../../private-docs/README.md).
 
-## `sennit config print`
+## `sennit config print` / `plan`
 
 Redacts **`servers.*.env`** (stdio), **`servers.*.headers`** (streamableHttp), and **`roots.allowUriPrefixes`**. Does **not** redact **`args`**, **`cwd`**, **`url`**, or other fields.
 
-**Changes:** schema in **`schema.ts`**, I/O in **`load.ts`**. Config lists processes to run; tool names still come from each upstream’s **`tools/list`** after connect (root [README.md](../../README.md)).
+**Changes:** schema in **`schema.ts`**, I/O in **`load.ts`**. Root [README.md](../../README.md) has the full operator story.

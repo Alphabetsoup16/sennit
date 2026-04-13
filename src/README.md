@@ -1,6 +1,6 @@
 # `src/`
 
-TypeScript for package **`sennit`**. Published output is **`dist/`** — run **`npm run build`** before **`npm pack`** or tests that spawn **`dist/fixtures/`**.
+TypeScript source for the **`sennit`** package. Product overview and quick start: [README.md](../README.md). Published output is **`dist/`** — run **`npm run build`** before **`npm pack`** or tests that spawn **`dist/fixtures/`**.
 
 ```mermaid
 flowchart LR
@@ -30,14 +30,21 @@ flowchart LR
 
 | Directory | Role |
 |-----------|------|
-| **`aggregator/`** | **`createAggregator`**: **`McpServer`**, **`UpstreamHub`**, tool / prompt / resource proxies, **`sennit.batch_call`** |
+| **`aggregator/`** | **`createAggregator`**: host **`McpServer`**, **`UpstreamHub`**, namespaced tools / prompts / resources, **`sennit.batch_call`**, sampling + elicitation bridges |
 | **`cli/`** | **`sennit`** binary: subcommands, config resolution, onboarding |
 | **`config/`** | Zod schema; YAML/JSON load |
-| **`lib/`** | Pure helpers (namespace, version, JSON text, errors) |
+| **`lib/`** | Pure helpers (namespace, limits, version, JSON text, errors, optional tool-description truncation, **`SENNIT_LOG=json`** lines) |
 | **`fixtures/`** | Mock stdio MCP server for tests only |
 
-Upstreams come **only** from **`config.servers`**. After connect, the aggregator probes **`tools/list`**, **`prompts/list`**, and **`resources/list`** per upstream, then registers **`serverKey__name`** entries. See root [README.md](../README.md).
+Upstreams are defined only in **`config.servers`**. After connect, the hub probes **`tools/list`**, **`prompts/list`** (when advertised), and **`resources/list`** (when supported) per upstream, then registers **`serverKey__name`** entries.
 
-**Published API:** `import { createAggregator, … } from "sennit"` (from build).
+## Documentation map
 
-**Contributing:** [docs/EXTENDING.md](../docs/EXTENDING.md).
+| Topic | Doc |
+|-------|-----|
+| Aggregator internals | [aggregator/README.md](aggregator/README.md) |
+| Config schema + redaction | [config/README.md](config/README.md) |
+| CLI modules | [cli/README.md](cli/README.md) |
+| Extending the codebase | [docs/EXTENDING.md](../docs/EXTENDING.md) |
+
+**Published API:** `import { createAggregator, … } from "sennit"` (from the build).

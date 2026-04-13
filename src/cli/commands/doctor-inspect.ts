@@ -19,7 +19,7 @@ export function registerDoctorInspect(doctor: Command): void {
   doctor
     .command("inspect")
     .description(
-      "Connect to each stdio upstream and run MCP tools/list plus resources/list when supported (live debugging)",
+      "Connect to each configured upstream and run MCP tools/list, prompts/list when advertised, and resources/list when supported (live debugging)",
     )
     .option(OPT_CONFIG_PATH, DESC_CONFIG_PATH_RESOLVE)
     .option(OPT_JSON, DESC_JSON)

@@ -1,6 +1,6 @@
 # `src/lib`
 
-Pure helpers — no transports, no subprocesses.
+Pure helpers — no transports, no subprocesses. Used by the aggregator and CLI.
 
 | File | Role |
 |------|------|
@@ -10,6 +10,8 @@ Pure helpers — no transports, no subprocesses.
 | **`version.ts`** | Version string from **`package.json`** |
 | **`json-text.ts`** | **`jsonText()`** — stable 2-space JSON for MCP **`text`** payloads |
 | **`error-message.ts`** | **`errorMessage(unknown)`** for logs and CLI |
+| **`truncate-tool-description.ts`** | **`truncateForToolList`** when **`toolsListDescriptionMaxChars`** is set |
+| **`sennit-json-log.ts`** | One JSON line per proxied tool result when **`SENNIT_LOG=json`** |
 
 ```mermaid
 flowchart LR
@@ -26,4 +28,4 @@ flowchart LR
   tn --> ns
 ```
 
-Namespacing is for the merged catalog only; which tools exist still comes from each upstream’s **`tools/list`**.
+Namespacing applies to the merged catalog; which tools exist still comes from each upstream’s **`tools/list`**.

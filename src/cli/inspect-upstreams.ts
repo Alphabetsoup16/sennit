@@ -12,10 +12,10 @@ export type RunDoctorInspectOptions = {
 };
 
 /**
- * Connect all stdio upstreams, run MCP `tools/list` per server (in parallel), then close.
- * Best-effort `resources/list` per upstream (ignored when unsupported).
- * Enforces an overall wall-clock timeout. Further upstream spawns are aborted once the deadline
- * passes; a single in-flight `client.connect` may still run until `hub.close()` in `finally`.
+ * Connect non-lazy upstreams via {@link UpstreamHub.connect}, probe each client in parallel
+ * (`tools/list`, `prompts/list` when advertised, best-effort `resources/list`), then close.
+ * Skips servers with `lazy: true` until something else connects them (use `plan` or `serve` for those).
+ * Enforces an overall wall-clock timeout; in-flight `client.connect` may still run until `hub.close()` in `finally`.
  */
 export async function runDoctorInspect(
   config: SennitConfig,

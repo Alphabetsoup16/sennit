@@ -8,18 +8,18 @@
 ## Clone → green
 
 ```bash
-git clone <repo-url> && cd sennit
+git clone <repo-url> && cd <repo-dir>
 npm ci
 npm run validate   # lint + typecheck + test (pretest builds dist/)
 ```
 
 ## Layout
 
-- Implementation: [`src/`](src/README.md) (each major folder has its own `README.md`)
+- Implementation: [`src/`](src/README.md) (major folders have their own **`README.md`**)
 - How to extend: [`docs/EXTENDING.md`](docs/EXTENDING.md)
-- Maintainer-only design docs: [`private-docs/README.md`](private-docs/README.md) (other files in that folder are gitignored)
+- Maintainer-only design notes: [`private-docs/README.md`](private-docs/README.md) (other files in that folder are gitignored)
 - Tests: [`tests/README.md`](tests/README.md)
-- **TypeScript**: `tsconfig.build.json` emits `dist/` from `src/`; root `tsconfig.json` includes `tests/` for ESLint/typecheck (no emit).
+- **TypeScript**: `tsconfig.build.json` emits **`dist/`** from **`src/`**; root `tsconfig.json` includes **`tests/`** for ESLint/typecheck (no emit).
 
 ## Pull requests
 
