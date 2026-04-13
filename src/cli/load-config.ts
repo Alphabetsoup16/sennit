@@ -1,4 +1,5 @@
 import { loadConfigFile } from "../config/load.js";
+import { errorMessage } from "../lib/error-message.js";
 import type { SennitConfig } from "../config/schema.js";
 import { sennitConfigSchema } from "../config/schema.js";
 
@@ -24,7 +25,7 @@ export function tryLoadSennitConfig(
   } catch (e) {
     return {
       ok: false,
-      error: e instanceof Error ? e.message : String(e),
+      error: errorMessage(e),
     };
   }
 }

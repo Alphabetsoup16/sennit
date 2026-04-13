@@ -7,7 +7,9 @@ import { resolveConfigPath } from "../paths.js";
 export function registerServe(program: Command): void {
   program
     .command("serve")
-    .description("Run the aggregator MCP server on stdio (for IDE / host)")
+    .description(
+      "Run the aggregator MCP server on stdio (for IDE / host). Use `sennit plan` for a dry-run preview.",
+    )
     .option("-c, --config <path>", "Path to sennit.config.yaml / .json")
     .action(async (opts: { config?: string }) => {
       const resolved = resolveConfigPath(opts.config);

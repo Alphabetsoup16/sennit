@@ -1,4 +1,5 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { errorMessage } from "../lib/error-message.js";
 
 export type BatchCallItem = {
   serverKey: string;
@@ -38,8 +39,7 @@ export async function executeBatchCall(
         );
         return { clientCallId: item.clientCallId, ok: true, result };
       } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        return { clientCallId: item.clientCallId, ok: false, error: message };
+        return { clientCallId: item.clientCallId, ok: false, error: errorMessage(e) };
       }
     }),
   );

@@ -1,7 +1,11 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { defaultUserSennitConfigFile } from "./user-sennit-paths.js";
 
-/** Resolve config path: `--config`, `SENNIT_CONFIG`, or `./sennit.config.ya?ml`. */
+/**
+ * Resolve config path (first match):
+ * explicit → `SENNIT_CONFIG` → `./sennit.config.ya?ml` (cwd) → per-user `config.yaml`.
+ */
 export function resolveConfigPath(explicit?: string): string | undefined {
   if (explicit) {
     return explicit;
@@ -15,6 +19,10 @@ export function resolveConfigPath(explicit?: string): string | undefined {
     if (existsSync(p)) {
       return p;
     }
+  }
+  const userFile = defaultUserSennitConfigFile();
+  if (existsSync(userFile)) {
+    return userFile;
   }
   return undefined;
 }

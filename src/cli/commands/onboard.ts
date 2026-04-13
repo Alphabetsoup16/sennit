@@ -5,7 +5,9 @@ import { resolveConfigPath } from "../paths.js";
 export function registerOnboard(program: Command): void {
   program
     .command("onboard")
-    .description("Print example Cursor-style MCP snippet")
+    .description(
+      "Print example host MCP snippet; use `sennit config path` for the default config file location",
+    )
     .option("-c, --config <path>", "Config path to embed in snippet")
     .action((opts: { config?: string }) => {
       const resolved =
@@ -14,7 +16,7 @@ export function registerOnboard(program: Command): void {
         mcpServers: {
           sennit: {
             command: "npx",
-            args: ["-y", "mcp-parallel", "serve", "--config", resolved],
+            args: ["-y", "sennit", "serve", "--config", resolved],
           },
         },
       };

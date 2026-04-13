@@ -1,24 +1,28 @@
-const SEP = "__";
+/** Reserved delimiter between upstream key and tool name in proxied tool ids. */
+export const TOOL_NAMESPACE_SEPARATOR = "__" as const;
 
 /**
- * Join server key and upstream tool name. Server keys must not contain `__`
+ * Join server key and upstream tool name. Server keys must not contain {@link TOOL_NAMESPACE_SEPARATOR}
  * (reserved as delimiter).
  */
 export function namespacedToolName(serverKey: string, toolName: string): string {
-  if (serverKey.includes(SEP)) {
-    throw new Error(`server key must not contain "${SEP}": ${JSON.stringify(serverKey)}`);
+  if (serverKey.includes(TOOL_NAMESPACE_SEPARATOR)) {
+    throw new Error(
+      `server key must not contain "${TOOL_NAMESPACE_SEPARATOR}": ${JSON.stringify(serverKey)}`,
+    );
   }
-  return `${serverKey}${SEP}${toolName}`;
+  return `${serverKey}${TOOL_NAMESPACE_SEPARATOR}${toolName}`;
 }
 
 /** Parse `serverKey__toolName` from a namespaced tool id. */
 export function parseNamespaced(namespaced: string): { serverKey: string; toolName: string } {
+  const SEP = TOOL_NAMESPACE_SEPARATOR;
   const i = namespaced.indexOf(SEP);
   if (i <= 0 || i === namespaced.length - SEP.length) {
     throw new Error(`invalid namespaced tool name: ${JSON.stringify(namespaced)}`);
   }
   return {
     serverKey: namespaced.slice(0, i),
-    toolName: namespaced.slice(i + SEP.length),
+    toolName: namespaced.slice(i + TOOL_NAMESPACE_SEPARATOR.length),
   };
 }

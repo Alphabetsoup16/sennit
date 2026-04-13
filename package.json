@@ -1,5 +1,5 @@
 {
-  "name": "mcp-parallel",
+  "name": "sennit",
   "version": "1.0.0",
   "description": "Sennit — aggregate MCP servers, parallel tool execution, and batch_call for strict hosts",
   "type": "module",
@@ -23,9 +23,23 @@
     "parallel",
     "aggregator"
   ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "commander": "^14.0.3",
+    "yaml": "^2.8.3",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.6.0",
+    "eslint": "^10.2.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.58.1",
+    "vitest": "^4.1.4"
+  },
   "bin": {
-    "sennit": "./dist/cli/index.js",
-    "mcp-parallel": "./dist/cli/index.js"
+    "sennit": "./dist/cli/index.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

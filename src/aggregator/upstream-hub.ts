@@ -3,28 +3,46 @@ import {
   getDefaultEnvironment,
   StdioClientTransport,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { SennitConfig } from "../config/schema.js";
+import { applyRootsPolicy } from "./roots-policy.js";
+import type { UpstreamRootsBridge } from "./roots-bridge.js";
 
 /** Manages one MCP `Client` per configured upstream (stdio). */
 export class UpstreamHub {
   private readonly clients = new Map<string, Client>();
 
+  constructor(private readonly rootsBridge?: UpstreamRootsBridge) {}
+
   async connect(config: SennitConfig): Promise<void> {
-    for (const [key, srv] of Object.entries(config.servers)) {
+    try {
       const baseEnv = getDefaultEnvironment();
-      const transport = new StdioClientTransport({
-        command: srv.command,
-        args: srv.args ?? [],
-        env: srv.env ? { ...baseEnv, ...srv.env } : baseEnv,
-        cwd: srv.cwd,
-        stderr: "inherit",
-      });
-      const client = new Client(
-        { name: `sennit-upstream-${key}`, version: "0.1.0" },
-        { capabilities: {} },
-      );
-      await client.connect(transport);
-      this.clients.set(key, client);
+      for (const [key, srv] of Object.entries(config.servers)) {
+        const transport = new StdioClientTransport({
+          command: srv.command,
+          args: srv.args ?? [],
+          env: srv.env ? { ...baseEnv, ...srv.env } : baseEnv,
+          cwd: srv.cwd,
+          stderr: "inherit",
+        });
+        const client = new Client(
+          { name: `sennit-upstream-${key}`, version: "0.1.0" },
+          {
+            capabilities: this.rootsBridge ? { roots: {} } : {},
+          },
+        );
+        await client.connect(transport);
+        if (this.rootsBridge) {
+          const bridge = this.rootsBridge;
+          client.setRequestHandler(ListRootsRequestSchema, async () => ({
+            roots: applyRootsPolicy(bridge.policy, await bridge.getHostRoots()),
+          }));
+        }
+        this.clients.set(key, client);
+      }
+    } catch (e) {
+      await this.close().catch(() => undefined);
+      throw e;
     }
   }
 

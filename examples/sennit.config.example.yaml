@@ -1,5 +1,10 @@
-# Sennit (mcp-parallel) — example config
+# Sennit — example config (npm package: sennit)
 version: 1
+# Optional: how upstream MCP servers see workspace roots (see docs/PASSTHROUGH-AND-MERGE.md).
+# roots:
+#   mode: ignore        # ignore | forward | intersect (default when omitted: ignore)
+#   allowUriPrefixes:   # required for intersect — roots whose uri starts with one of these
+#     - "file:///Users/you/projects/acme"
 servers:
   # docs:
   #   transport: stdio

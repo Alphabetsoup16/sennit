@@ -8,6 +8,11 @@ export {
   type SennitConfig,
   type StdioServerConfig,
 } from "./config/schema.js";
+export { errorMessage } from "./lib/error-message.js";
 export { jsonText } from "./lib/json-text.js";
-export { namespacedToolName, parseNamespaced } from "./lib/namespace.js";
+export {
+  namespacedToolName,
+  parseNamespaced,
+  TOOL_NAMESPACE_SEPARATOR,
+} from "./lib/namespace.js";
 export { VERSION } from "./lib/version.js";

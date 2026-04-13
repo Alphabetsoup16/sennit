@@ -7,10 +7,17 @@ import { registerAllCommands } from "./register-commands.js";
 const program = new Command();
 program
   .name("sennit")
-  .description("Sennit — MCP aggregator (mcp-parallel)")
-  .version(VERSION);
+  .description("Sennit — MCP aggregator")
+  .version(VERSION)
+  /** So `doctor inspect -c path` binds `-c` to `inspect`, not the root program. */
+  .enablePositionalOptions();
 
 registerAllCommands(program);
+
+program.helpCommand(
+  "help [command]",
+  "Show help for sennit or one subcommand (e.g. sennit help doctor)",
+);
 
 if (isMainModule(import.meta.url)) {
   void program.parseAsync(process.argv).catch((err) => {

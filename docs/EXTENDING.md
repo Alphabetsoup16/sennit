@@ -2,12 +2,16 @@
 
 Where to plug in new behavior so the codebase stays predictable.
 
+For **multi-capability passthrough** (tools, resources, prompts, **roots**, notifications) and **merge policy** expectations, read [**PASSTHROUGH-AND-MERGE.md**](PASSTHROUGH-AND-MERGE.md) first so new code matches the documented contract.
+
 ## Add a CLI subcommand
 
 1. Create [`src/cli/commands/<name>.ts`](../src/cli/commands/) with `export function register<Name>(program: Command): void` (see existing files).
 2. Import and call it from [`src/cli/register-commands.ts`](../src/cli/register-commands.ts).
 3. Add a short note in [`src/cli/README.md`](../src/cli/README.md) if the command is non-obvious.
 4. Add tests under [`tests/`](../tests/) if the command has logic beyond delegating to the library.
+
+**Reference:** [`setup`](../src/cli/commands/setup.ts) writes the per-user config and delegates import rules to [`import-host-mcp.ts`](../src/cli/import-host-mcp.ts); path resolution lives in [`paths.ts`](../src/cli/paths.ts) + [`user-sennit-paths.ts`](../src/cli/user-sennit-paths.ts).
 
 ## Add config fields
 
@@ -39,3 +43,7 @@ Re-export from [`src/index.ts`](../src/index.ts) only for stable public API; kee
 | Aggregator / MCP | `tests/aggregator-*.test.ts` + helpers in [`tests/test-utils.ts`](../tests/test-utils.ts) |
 
 Run **`npm run validate`** before opening a PR.
+
+## CLI parsing note
+
+[`src/cli/index.ts`](../src/cli/index.ts) enables **`enablePositionalOptions()`** so options that appear **after** a subcommand name apply to that subcommand (e.g. **`doctor inspect -c path`**). Keep this in mind when adding duplicate **`--config`** / short flags on both a parent and a child command.

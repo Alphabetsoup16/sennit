@@ -22,7 +22,7 @@ npm publish --access public
 
 ## After publish
 
-- Smoke test: `npx mcp-parallel@latest doctor` (npm package name; CLI binary is still `sennit`).
+- Smoke test: `npx sennit@latest doctor` (package and CLI are both **`sennit`**).
 - Tag the release in git: `git tag v1.0.0 && git push origin v1.0.0` (adjust version).
 
 ## Versioning

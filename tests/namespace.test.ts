@@ -14,4 +14,20 @@ describe("namespace", () => {
   it("rejects __ in server key", () => {
     expect(() => namespacedToolName("bad__key", "t")).toThrow(/server key/);
   });
+
+  it("parseNamespaced rejects missing delimiter", () => {
+    expect(() => parseNamespaced("noDelimiterHere")).toThrow(/invalid namespaced/);
+  });
+
+  it("parseNamespaced rejects delimiter at start", () => {
+    expect(() => parseNamespaced("__toolOnly")).toThrow(/invalid namespaced/);
+  });
+
+  it("parseNamespaced rejects empty tool segment", () => {
+    expect(() => parseNamespaced("server__")).toThrow(/invalid namespaced/);
+  });
+
+  it("parseNamespaced rejects empty server segment", () => {
+    expect(() => parseNamespaced("__tool")).toThrow(/invalid namespaced/);
+  });
 });
