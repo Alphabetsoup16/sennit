@@ -171,6 +171,7 @@ export async function startServeHttpGateway(
       await Promise.all(
         [...sessions.values()].map(async (s) => {
           s.detach();
+          s.transport.onclose = undefined;
           await s.transport.close().catch(() => undefined);
           await s.mcp.close().catch(() => undefined);
         }),

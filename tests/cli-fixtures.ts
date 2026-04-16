@@ -21,6 +21,11 @@ export function distMockRootsUpstreamPath(): string {
   return join(pkgRoot, "dist", "fixtures", "mock-roots-upstream.js");
 }
 
+/** Built stdio server that triggers roots/sampling/elicitation callbacks (requires `npm run build`). */
+export function distMockContextUpstreamPath(): string {
+  return join(pkgRoot, "dist", "fixtures", "mock-context-upstream.js");
+}
+
 /** Write `data` as YAML in a temp dir; run `fn(absolutePath)`; always remove the dir. */
 export async function withTempYamlConfig<T>(
   data: unknown,
