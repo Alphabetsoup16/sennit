@@ -4,7 +4,7 @@ Zod schema and disk load (YAML / JSON). Operators use the CLI (**`sennit config 
 
 | File | Role |
 |------|------|
-| **`schema.ts`** | **`sennitConfigSchema`**: **`version: 1`**, **`servers`** (**`stdio`** \| **`streamableHttp`** \| **`sse`**), **`roots`** (incl. **`mapByUpstream`**), optional **`toolsListDescriptionMaxChars`**, **`dynamicToolList` / `dynamicResourceList` / `dynamicPromptList`**, **`batchCallMaxConcurrency`** |
+| **`schema.ts`** | **`sennitConfigSchema`**: **`version: 1`**, **`servers`** (**`stdio`** \| **`streamableHttp`** \| **`sse`**), **`roots`** (incl. **`mapByUpstream`**), optional **`toolsListDescriptionMaxChars`**, **`dynamicToolList` / `dynamicResourceList` / `dynamicPromptList`**, **`batchCallMaxConcurrency`** (optional positive integer — omit for unbounded upstream parallelism per batch request) |
 | **`load.ts`** | **`loadConfigFile`**: read by extension, **`schema.parse`** |
 
 ## `servers`

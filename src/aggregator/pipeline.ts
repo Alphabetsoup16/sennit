@@ -1,19 +1,13 @@
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import type { SennitConfig } from "../config/schema.js";
 import { errorMessage } from "../lib/error-message.js";
 import { jsonText } from "../lib/json-text.js";
 import { BATCH_CALL_MAX_ITEMS } from "../lib/limits.js";
-import { takeUniqueMergedToolId, TOOL_NAMESPACE_SEPARATOR } from "../lib/namespace.js";
-import { sennitJsonLog } from "../lib/sennit-json-log.js";
-import { withAbortTimeout } from "../lib/with-timeout.js";
-import { truncateForToolList } from "../lib/truncate-tool-description.js";
 import { VERSION } from "../lib/version.js";
 import { executeBatchCall } from "./batch.js";
 import type { DoctorInspectResult } from "./doctor-inspect-types.js";
-import { zodShapeFromPromptArguments } from "./prompt-args-from-listing.js";
 import {
   doctorInspectResultFromProbeRows,
   probeConnectedHub,
@@ -21,7 +15,12 @@ import {
   toolCatalogsFromProbeRowsOrThrow,
   type UpstreamProbeRow,
 } from "./upstream-probe.js";
-import { looseToolArgumentsSchema, proxyToolInputSchema } from "./proxy-input-schema.js";
+import { looseToolArgumentsSchema } from "./proxy-input-schema.js";
+import {
+  proxiedNamespacingRuleSummary,
+  registerProxiedPrompts,
+  registerProxiedTools,
+} from "./register-proxied-surface.js";
 import { registerProxyResources, resourceNamespacingSummary } from "./register-resources.js";
 import type { UpstreamRootsBridge } from "./roots-bridge.js";
 import { makeUpstreamRootsBridge } from "./roots-bridge.js";
@@ -101,7 +100,7 @@ export async function registerAggregatorSurface(
             sennitVersion: VERSION,
             upstreamServerKeys: hub.serverKeys(),
             roots: config.roots,
-            namespacing: `Proxied tools and prompts use {serverKey}${TOOL_NAMESPACE_SEPARATOR}{upstreamName}. Server keys must not contain ${TOOL_NAMESPACE_SEPARATOR}.`,
+            namespacing: proxiedNamespacingRuleSummary(),
             sampling:
               "Upstream servers may call sampling/createMessage during proxied work; Sennit forwards to the host client when it declares the sampling capability (including sampling.tools for tool loops).",
             toolsListDescriptionMaxChars: config.toolsListDescriptionMaxChars ?? null,
@@ -143,142 +142,8 @@ export async function registerAggregatorSurface(
     },
   );
 
-  const seen = new Set<string>();
-  for (const { serverKey, tools } of upstreamToolCatalogs) {
-    const allow = config.servers[serverKey]?.tools;
-
-    for (const tool of tools) {
-      if (allow && !allow.includes(tool.name)) {
-        continue;
-      }
-
-      const full = takeUniqueMergedToolId(seen, serverKey, tool.name);
-
-      const rawDescription =
-        tool.description ?? `Proxied from upstream "${serverKey}" (tool: ${tool.name}).`;
-
-      mcp.registerTool(
-        full,
-        {
-          description: truncateForToolList(rawDescription, config.toolsListDescriptionMaxChars),
-          inputSchema: proxyToolInputSchema(tool.inputSchema),
-        },
-        async (args) => {
-          const c = await hub.ensureClient(serverKey);
-          if (!c) {
-            return {
-              content: [{ type: "text", text: `upstream missing: ${serverKey}` }],
-              isError: true,
-            };
-          }
-          const t0 = Date.now();
-          try {
-            const timeoutMs = config.servers[serverKey]?.toolCallTimeoutMs;
-            const out =
-              timeoutMs !== undefined
-                ? await withAbortTimeout(timeoutMs, (signal) =>
-                    c.callTool(
-                      {
-                        name: tool.name,
-                        arguments: (args as Record<string, unknown>) ?? {},
-                      },
-                      undefined,
-                      { signal },
-                    ),
-                  )
-                : await c.callTool({
-                    name: tool.name,
-                    arguments: (args as Record<string, unknown>) ?? {},
-                  });
-            sennitJsonLog("tool_proxy_ok", {
-              serverKey,
-              tool: tool.name,
-              ms: Date.now() - t0,
-            });
-            hub.touchActivity(serverKey);
-            return out as CallToolResult;
-          } catch (e) {
-            sennitJsonLog("tool_proxy_err", {
-              serverKey,
-              tool: tool.name,
-              ms: Date.now() - t0,
-              error: errorMessage(e),
-            });
-            throw e;
-          }
-        },
-      );
-    }
-  }
-
-  const seenPrompts = new Set<string>();
-  for (const { serverKey, prompts } of upstreamPromptCatalogs) {
-    const allow = config.servers[serverKey]?.prompts;
-
-    for (const prompt of prompts) {
-      if (allow && !allow.includes(prompt.name)) {
-        continue;
-      }
-
-      const full = takeUniqueMergedToolId(seenPrompts, serverKey, prompt.name);
-      const shape = zodShapeFromPromptArguments(prompt);
-      const description =
-        prompt.description ??
-        `Proxied from upstream "${serverKey}" (prompt: ${prompt.name}).`;
-
-      if (Object.keys(shape).length === 0) {
-        mcp.registerPrompt(
-          full,
-          { description, title: prompt.title },
-          async () => {
-            const c = await hub.ensureClient(serverKey);
-            if (!c) {
-              return {
-                messages: [
-                  {
-                    role: "user",
-                    content: { type: "text", text: `upstream missing: ${serverKey}` },
-                  },
-                ],
-              };
-            }
-            const r = await c.getPrompt({ name: prompt.name, arguments: {} });
-            hub.touchActivity(serverKey);
-            return r;
-          },
-        );
-      } else {
-        mcp.registerPrompt(
-          full,
-          { description, title: prompt.title, argsSchema: shape },
-          async (args) => {
-            const c = await hub.ensureClient(serverKey);
-            if (!c) {
-              return {
-                messages: [
-                  {
-                    role: "user",
-                    content: { type: "text", text: `upstream missing: ${serverKey}` },
-                  },
-                ],
-              };
-            }
-            const stringArgs = Object.fromEntries(
-              Object.entries(args as Record<string, unknown>)
-                .filter(([, v]) => v !== undefined && v !== null)
-                .map(([k, v]) => [k, String(v)]),
-            ) as Record<string, string>;
-            const r = await c.getPrompt({
-              name: prompt.name,
-              arguments: stringArgs,
-            });
-            hub.touchActivity(serverKey);
-            return r;
-          },
-        );
-      }
-    }
-  }
+  await registerProxiedTools(mcp, hub, config, upstreamToolCatalogs);
+  await registerProxiedPrompts(mcp, hub, config, upstreamPromptCatalogs);
 
   await registerProxyResources(mcp, hub, config);
 }

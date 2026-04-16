@@ -44,13 +44,16 @@ export function parseFacadeResourceUri(facadeUri: string): { serverKey: string; 
 
 const TPL_PREFIX = "urn:sennit:rt:v1:";
 
+/** RFC 6570 variable name for the concrete upstream resource URI in {@link facadeResourceTemplatePattern}. */
+export const FACADE_RESOURCE_TEMPLATE_URI_VARIABLE = "u";
+
 /**
- * RFC 6570 URI template for the facade: expanded variable `u` must be the **concrete** upstream
- * resource URI (so `readResource` can be forwarded unchanged).
+ * RFC 6570 URI template for the facade: expanded variable {@link FACADE_RESOURCE_TEMPLATE_URI_VARIABLE}
+ * must be the **concrete** upstream resource URI (so `readResource` can be forwarded unchanged).
  */
 export function facadeResourceTemplatePattern(serverKey: string, upstreamUriTemplate: string): string {
   const payload = Buffer.from(JSON.stringify({ k: serverKey, t: upstreamUriTemplate }), "utf8").toString(
     "base64url",
   );
-  return `${TPL_PREFIX}${payload}/{+u}`;
+  return `${TPL_PREFIX}${payload}/{+${FACADE_RESOURCE_TEMPLATE_URI_VARIABLE}}`;
 }

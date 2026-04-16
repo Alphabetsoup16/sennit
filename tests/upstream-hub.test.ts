@@ -27,7 +27,7 @@ describe("UpstreamHub", () => {
     });
 
     await expect(hub.connect(config)).rejects.toThrow();
-    expect(hub.get("first")).toBeUndefined();
+    expect(await hub.ensureClient("first")).toBeUndefined();
     await hub.close();
   });
 

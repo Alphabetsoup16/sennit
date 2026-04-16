@@ -2,7 +2,11 @@ import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/serv
 import type { SennitConfig } from "../config/schema.js";
 import { errorMessage } from "../lib/error-message.js";
 import { namespacedToolName, TOOL_NAMESPACE_SEPARATOR } from "../lib/namespace.js";
-import { facadeResourceTemplatePattern, facadeResourceUri } from "../lib/resource-facade.js";
+import {
+  FACADE_RESOURCE_TEMPLATE_URI_VARIABLE,
+  facadeResourceTemplatePattern,
+  facadeResourceUri,
+} from "../lib/resource-facade.js";
 import { listAllResourceTemplates, listAllResources } from "./list-resources.js";
 import type { UpstreamHub } from "./upstream-hub.js";
 
@@ -176,9 +180,11 @@ export async function registerProxyResources(
         title: row.title,
       },
       async (uri, variables) => {
-        const u = variables["u"];
+        const u = variables[FACADE_RESOURCE_TEMPLATE_URI_VARIABLE];
         if (typeof u !== "string") {
-          throw new Error("missing or invalid resource template variable u");
+          throw new Error(
+            `missing or invalid resource template variable ${FACADE_RESOURCE_TEMPLATE_URI_VARIABLE}`,
+          );
         }
         const c = await hub.ensureClient(row.serverKey);
         if (!c) {

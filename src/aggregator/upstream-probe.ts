@@ -42,13 +42,13 @@ export async function probeConnectedHub(hub: UpstreamHub): Promise<UpstreamProbe
         const { tools } = await client.listTools();
         let resourceCount: number | undefined;
         let resourceTemplateCount: number | undefined;
-        try {
-          const resources = await listAllResources(client);
-          resourceCount = resources.length;
-        } catch {
-          // Upstream may not advertise resources — omit resourceCount.
-        }
         if (client.getServerCapabilities()?.resources) {
+          try {
+            const resources = await listAllResources(client);
+            resourceCount = resources.length;
+          } catch {
+            // Listing failed despite capability advertisement — omit counts.
+          }
           try {
             const tpl = await listAllResourceTemplates(client);
             resourceTemplateCount = tpl.length;
@@ -99,16 +99,20 @@ export function doctorInspectResultFromProbeRows(rows: UpstreamProbeRow[]): Doct
   return { schemaVersion: 1, ok: upstreams.every((u) => u.ok), upstreams };
 }
 
+function catalogsFromProbeRowsOrThrow<T>(rows: UpstreamProbeRow[], mapOk: (r: UpstreamProbeOkRow) => T): T[] {
+  const firstBad = rows.find((r): r is UpstreamProbeErrRow => !r.ok);
+  if (firstBad) {
+    throw new Error(firstBad.error);
+  }
+  return (rows as UpstreamProbeOkRow[]).map(mapOk);
+}
+
 /** Tool catalogs for registration; throws if any probe row failed (createAggregator semantics). */
 export function toolCatalogsFromProbeRowsOrThrow(rows: UpstreamProbeRow[]): Array<{
   serverKey: string;
   tools: ListedTool[];
 }> {
-  const firstBad = rows.find((r): r is UpstreamProbeErrRow => !r.ok);
-  if (firstBad) {
-    throw new Error(firstBad.error);
-  }
-  return (rows as UpstreamProbeOkRow[]).map((r) => ({ serverKey: r.serverKey, tools: r.tools }));
+  return catalogsFromProbeRowsOrThrow(rows, (r) => ({ serverKey: r.serverKey, tools: r.tools }));
 }
 
 /** Prompt catalogs for registration; throws if any probe row failed (createAggregator semantics). */
@@ -116,11 +120,7 @@ export function promptCatalogsFromProbeRowsOrThrow(rows: UpstreamProbeRow[]): Ar
   serverKey: string;
   prompts: ListedPrompt[];
 }> {
-  const firstBad = rows.find((r): r is UpstreamProbeErrRow => !r.ok);
-  if (firstBad) {
-    throw new Error(firstBad.error);
-  }
-  return (rows as UpstreamProbeOkRow[]).map((r) => ({
+  return catalogsFromProbeRowsOrThrow(rows, (r) => ({
     serverKey: r.serverKey,
     prompts: r.prompts ?? [],
   }));

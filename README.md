@@ -94,7 +94,7 @@ Implementation detail (hub, bridges, batching): [`src/aggregator/README.md`](src
 |-----------|------------|
 | **Config schema, paths, redaction** | [`src/config/README.md`](src/config/README.md) |
 | **CLI commands** | [`src/cli/commands/README.md`](src/cli/commands/README.md) |
-| **Package layout & public API** | [`src/README.md`](src/README.md) |
+| **Package layout & public API** | [`src/README.md`](src/README.md) — `src/index.ts` also exports `streamableHttpServerSchema`, `sseServerSchema`, and `serverEntrySchema` for TypeScript config authors |
 | **Aggregator behavior & file roles** | [`src/aggregator/README.md`](src/aggregator/README.md) |
 | **How to extend / roadmap-adjacent hooks** | [`docs/EXTENDING.md`](docs/EXTENDING.md) |
 | **Releases** | [`docs/PUBLISHING.md`](docs/PUBLISHING.md) |

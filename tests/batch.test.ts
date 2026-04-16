@@ -82,6 +82,30 @@ describe("executeBatchCall", () => {
     expect(elapsed).toBeLessThan(delay * 2 - 10);
   });
 
+  it("respects maxConcurrency when lower than call count", async () => {
+    const delay = 30;
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const hub = stubHub({
+      a: async () => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((r) => setTimeout(r, delay));
+        inFlight -= 1;
+        return { content: [{ type: "text", text: "ok" }] };
+      },
+    });
+    const calls = Array.from({ length: 8 }, (_, i) => ({
+      serverKey: "a",
+      toolName: "t",
+      clientCallId: `c${i}`,
+    }));
+    const out = await executeBatchCall(hub, calls, { maxConcurrency: 2 });
+    expect(maxInFlight).toBeLessThanOrEqual(2);
+    expect(out).toHaveLength(8);
+    expect(out.every((r) => r.ok)).toBe(true);
+  });
+
   it("returns per-call failure when AbortSignal is already aborted (forwards SDK-style abort)", async () => {
     const hub = stubHub({
       a: async (_name, _args, opts) => {

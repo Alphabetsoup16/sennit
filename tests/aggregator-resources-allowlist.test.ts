@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { listAllResources } from "../src/aggregator/list-resources.js";
+import { listAllResourceTemplates, listAllResources } from "../src/aggregator/list-resources.js";
 import { sennitConfigSchema } from "../src/config/schema.js";
 import { withInMemoryAggregator } from "./test-utils.js";
 
@@ -46,6 +46,30 @@ describe("createAggregator resources allowlist", () => {
       async (client) => {
         const resources = await listAllResources(client);
         expect(resources.map((r) => r.name)).toEqual(["mock__mock.readme"]);
+      },
+    );
+  });
+
+  it("exposes only resource templates when resources allowlist is empty but resourceTemplates is set", async () => {
+    const mockPath = join(root, "dist", "fixtures", "mock-upstream.js");
+    await withInMemoryAggregator(
+      sennitConfigSchema.parse({
+        version: 1,
+        servers: {
+          mock: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [mockPath],
+            resources: [],
+            resourceTemplates: ["file:///mock/dynamic/{name}"],
+          },
+        },
+      }),
+      async (client) => {
+        const resources = await listAllResources(client);
+        expect(resources).toEqual([]);
+        const templates = await listAllResourceTemplates(client);
+        expect(templates.map((t) => t.name)).toEqual(["mock__mock.dynamic"]);
       },
     );
   });

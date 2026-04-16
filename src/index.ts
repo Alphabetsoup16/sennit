@@ -4,9 +4,15 @@ export { UpstreamHub } from "./aggregator/upstream-hub.js";
 export { loadConfigFile } from "./config/load.js";
 export {
   sennitConfigSchema,
+  serverEntrySchema,
+  sseServerSchema,
   stdioServerSchema,
+  streamableHttpServerSchema,
   type SennitConfig,
+  type ServerEntryConfig,
+  type SseServerConfig,
   type StdioServerConfig,
+  type StreamableHttpServerConfig,
 } from "./config/schema.js";
 export { errorMessage } from "./lib/error-message.js";
 export { BATCH_CALL_MAX_ITEMS } from "./lib/limits.js";
