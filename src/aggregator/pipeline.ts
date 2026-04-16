@@ -18,6 +18,7 @@ import {
 import { looseToolArgumentsSchema } from "./proxy-input-schema.js";
 import {
   proxiedNamespacingRuleSummary,
+  type RemovableRegistration,
   registerProxiedPrompts,
   registerProxiedTools,
 } from "./register-proxied-surface.js";
@@ -56,6 +57,11 @@ export type AggregatorHandle = {
   mcp: McpServer;
   close: () => Promise<void>;
   detachHostListChanged?: () => void;
+  detachDynamicCatalogRefresh?: () => void;
+};
+
+export type AggregatorSurfaceState = {
+  removable: RemovableRegistration[];
 };
 
 export function createMcpAndHub(config: SennitConfig): {
@@ -85,7 +91,7 @@ export async function registerAggregatorSurface(
   upstreamToolCatalogs: Array<{ serverKey: string; tools: ListedTool[] }>,
   upstreamPromptCatalogs: Array<{ serverKey: string; prompts: ListedPrompt[] }>,
   rootsBridge: UpstreamRootsBridge | undefined,
-): Promise<void> {
+): Promise<AggregatorSurfaceState> {
   mcp.registerTool(
     "sennit.meta",
     {
@@ -150,22 +156,129 @@ export async function registerAggregatorSurface(
       }),
   );
 
-  await registerProxiedTools(mcp, hub, config, upstreamToolCatalogs);
-  registerAliasTools(mcp, hub, config);
-  await registerProxiedPrompts(mcp, hub, config, upstreamPromptCatalogs);
+  const removable: RemovableRegistration[] = [];
+  removable.push(...(await registerProxiedTools(mcp, hub, config, upstreamToolCatalogs)));
+  removable.push(...registerAliasTools(mcp, hub, config));
+  removable.push(...(await registerProxiedPrompts(mcp, hub, config, upstreamPromptCatalogs)));
+  removable.push(...(await registerProxyResources(mcp, hub, config)));
+  return { removable };
+}
 
-  await registerProxyResources(mcp, hub, config);
+export function attachDynamicCatalogRefresh(
+  mcp: McpServer,
+  hub: UpstreamHub,
+  config: SennitConfig,
+  rootsBridge: UpstreamRootsBridge | undefined,
+  state: AggregatorSurfaceState,
+): () => void {
+  if (!(config.dynamicToolList || config.dynamicResourceList || config.dynamicPromptList)) {
+    return () => undefined;
+  }
+  let closed = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let refreshing = false;
+  let refreshAgain = false;
+
+  const removeAll = () => {
+    for (const h of state.removable) {
+      try {
+        h.remove();
+      } catch {
+        // ignore stale handles
+      }
+    }
+    state.removable = [];
+  };
+
+  const rebuild = async () => {
+    if (closed) {
+      return;
+    }
+    if (refreshing) {
+      refreshAgain = true;
+      return;
+    }
+    refreshing = true;
+    try {
+      const rows = await probeConnectedHub(hub);
+      const toolCatalogs = toolCatalogsFromProbeRowsOrThrow(rows);
+      const promptCatalogs = promptCatalogsFromProbeRowsOrThrow(rows);
+      removeAll();
+      state.removable.push(...(await registerProxiedTools(mcp, hub, config, toolCatalogs)));
+      state.removable.push(...registerAliasTools(mcp, hub, config));
+      state.removable.push(...(await registerProxiedPrompts(mcp, hub, config, promptCatalogs)));
+      state.removable.push(...(await registerProxyResources(mcp, hub, config)));
+      if (config.dynamicToolList) {
+        try {
+          mcp.sendToolListChanged();
+        } catch {
+          // host may be disconnected
+        }
+      }
+      if (config.dynamicResourceList) {
+        try {
+          mcp.sendResourceListChanged();
+        } catch {
+          // host may be disconnected
+        }
+      }
+      if (config.dynamicPromptList) {
+        try {
+          mcp.sendPromptListChanged();
+        } catch {
+          // host may be disconnected
+        }
+      }
+      if (config.roots.mode !== "ignore") {
+        rootsBridge?.getHostRoots().catch(() => undefined);
+      }
+    } catch {
+      // keep existing registrations if rebuild fails
+    } finally {
+      refreshing = false;
+      if (refreshAgain && !closed) {
+        refreshAgain = false;
+        void rebuild();
+      }
+    }
+  };
+
+  const unsubscribe = hub.onListChanged(() => {
+    if (closed) {
+      return;
+    }
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+    timer = setTimeout(() => {
+      timer = undefined;
+      void rebuild();
+    }, 50);
+  });
+
+  return () => {
+    closed = true;
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+    unsubscribe();
+    removeAll();
+  };
 }
 
 export function finalizeAggregatorHandle(
   mcp: McpServer,
   hub: UpstreamHub,
   detachHostListChanged?: () => void,
+  detachDynamicCatalogRefresh?: () => void,
 ): AggregatorHandle {
   return {
     mcp,
     detachHostListChanged,
+    detachDynamicCatalogRefresh,
     close: async () => {
+      detachDynamicCatalogRefresh?.();
       detachHostListChanged?.();
       await mcp.close();
       await hub.close();
@@ -208,13 +321,27 @@ export async function createAggregator(config: SennitConfig): Promise<Aggregator
     { capabilities: { tools: {}, prompts: {} } },
   );
   try {
-    await registerAggregatorSurface(mcp, hub, config, toolCatalogs, promptCatalogs, rootsBridge);
+    const state = await registerAggregatorSurface(
+      mcp,
+      hub,
+      config,
+      toolCatalogs,
+      promptCatalogs,
+      rootsBridge,
+    );
+    const detachDynamicCatalogRefresh = attachDynamicCatalogRefresh(
+      mcp,
+      hub,
+      config,
+      rootsBridge,
+      state,
+    );
     const detachHostListChanged = attachHostListChangedSubscriptions(
       mcp,
       hub.listChangedFanout,
       config,
     );
-    return finalizeAggregatorHandle(mcp, hub, detachHostListChanged);
+    return finalizeAggregatorHandle(mcp, hub, detachHostListChanged, detachDynamicCatalogRefresh);
   } catch (e) {
     await hub.close().catch(() => undefined);
     await mcp.close().catch(() => undefined);

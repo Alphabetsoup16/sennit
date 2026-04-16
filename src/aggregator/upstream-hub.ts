@@ -12,6 +12,7 @@ import {
   ElicitRequestSchema,
   ListRootsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { assertHttpOrHttpsUrl } from "../lib/assert-http-upstream-url.js";
 import { sennitJsonLog } from "../lib/sennit-json-log.js";
 import { wrapFetchWithDeadline } from "../lib/fetch-timeout.js";
@@ -118,6 +119,8 @@ type UpstreamTelemetry = {
   circuitRejected: number;
 };
 
+type UpstreamListChangedKind = "tools" | "resources" | "prompts";
+
 /** Manages one MCP `Client` per configured upstream (stdio, Streamable HTTP, or legacy SSE). */
 export class UpstreamHub {
   private config: SennitConfig | null = null;
@@ -132,6 +135,11 @@ export class UpstreamHub {
   private readonly inFlightCalls = new Map<string, number>();
   private readonly circuitStates = new Map<string, CircuitState>();
   private readonly telemetry = new Map<string, UpstreamTelemetry>();
+  private readonly listChangedListeners = new Set<
+    (event: { serverKey: string; kind: UpstreamListChangedKind }) => void
+  >();
+  private readonly activeHostByServer = new Map<string, McpServer>();
+  private readonly hostContextTailByServer = new Map<string, Promise<void>>();
 
   readonly listChangedFanout: HostListChangedFanout;
 
@@ -265,16 +273,27 @@ export class UpstreamHub {
     if (this.dynamicToolList || this.dynamicResourceList || this.dynamicPromptList) {
       clientOptions.listChanged = {
         ...(this.dynamicToolList
-          ? { tools: listChangedNotifyHandler(() => fanout.signalHostToolListChanged()) }
+          ? {
+              tools: listChangedNotifyHandler(() => {
+                fanout.signalHostToolListChanged();
+                this.emitListChanged(serverKey, "tools");
+              }),
+            }
           : {}),
         ...(this.dynamicResourceList
           ? {
-              resources: listChangedNotifyHandler(() => fanout.signalHostResourceListChanged()),
+              resources: listChangedNotifyHandler(() => {
+                fanout.signalHostResourceListChanged();
+                this.emitListChanged(serverKey, "resources");
+              }),
             }
           : {}),
         ...(this.dynamicPromptList
           ? {
-              prompts: listChangedNotifyHandler(() => fanout.signalHostPromptListChanged()),
+              prompts: listChangedNotifyHandler(() => {
+                fanout.signalHostPromptListChanged();
+                this.emitListChanged(serverKey, "prompts");
+              }),
             }
           : {}),
       };
@@ -326,7 +345,8 @@ export class UpstreamHub {
     if (this.rootsBridge) {
       const bridge = this.rootsBridge;
       client.setRequestHandler(ListRootsRequestSchema, async () => {
-        const hostMcp = getCurrentHostMcp() ?? getActiveHostMcp();
+        const hostMcp =
+          this.activeHostByServer.get(serverKey) ?? getCurrentHostMcp() ?? getActiveHostMcp();
         if (!hostMcp) {
           bridge.lastHostRootsError =
             "no active host MCP session (roots/list must run within an active host request context)";
@@ -342,7 +362,8 @@ export class UpstreamHub {
     if (this.samplingBridge) {
       const sampling = this.samplingBridge;
       client.setRequestHandler(CreateMessageRequestSchema, async (request) => {
-        const hostMcp = getCurrentHostMcp() ?? getActiveHostMcp();
+        const hostMcp =
+          this.activeHostByServer.get(serverKey) ?? getCurrentHostMcp() ?? getActiveHostMcp();
         if (!hostMcp) {
           throw new Error(
             "No active host MCP session for sampling (sampling/createMessage must run in the invoking host session).",
@@ -354,7 +375,8 @@ export class UpstreamHub {
     if (this.elicitationBridge) {
       const elicitation = this.elicitationBridge;
       client.setRequestHandler(ElicitRequestSchema, async (request) => {
-        const hostMcp = getCurrentHostMcp() ?? getActiveHostMcp();
+        const hostMcp =
+          this.activeHostByServer.get(serverKey) ?? getCurrentHostMcp() ?? getActiveHostMcp();
         if (!hostMcp) {
           throw new Error(
             "No active host MCP session for elicitation (elicitation/create must run in the invoking host session).",
@@ -393,6 +415,9 @@ export class UpstreamHub {
     this.inFlightCalls.clear();
     this.circuitStates.clear();
     this.telemetry.clear();
+    this.listChangedListeners.clear();
+    this.activeHostByServer.clear();
+    this.hostContextTailByServer.clear();
     this.config = null;
     this.dynamicToolList = false;
     this.dynamicResourceList = false;
@@ -424,6 +449,13 @@ export class UpstreamHub {
     return Object.fromEntries(this.configuredServerKeys().map((k) => [k, this.telemetryFor(k)]));
   }
 
+  onListChanged(listener: (event: { serverKey: string; kind: UpstreamListChangedKind }) => void): () => void {
+    this.listChangedListeners.add(listener);
+    return () => {
+      this.listChangedListeners.delete(listener);
+    };
+  }
+
   async callTool(
     serverKey: string,
     params: CallToolRequest["params"],
@@ -433,9 +465,46 @@ export class UpstreamHub {
     if (!client) {
       throw new Error(`unknown serverKey: ${serverKey}`);
     }
-    return this.withToolCallResilience(serverKey, () =>
-      client.callTool(params, undefined, { signal: options?.signal }) as Promise<CallToolResult>,
+    const hostMcp = getCurrentHostMcp() ?? getActiveHostMcp();
+    if (!this.requiresHostContextIsolation() || !hostMcp) {
+      return this.withToolCallResilience(serverKey, () =>
+        client.callTool(params, undefined, { signal: options?.signal }) as Promise<CallToolResult>,
+      );
+    }
+    return this.withBoundHostContext(serverKey, hostMcp, () =>
+      this.withToolCallResilience(serverKey, () =>
+        client.callTool(params, undefined, { signal: options?.signal }) as Promise<CallToolResult>,
+      ),
     );
+  }
+
+  private requiresHostContextIsolation(): boolean {
+    return this.rootsBridge !== undefined || this.samplingBridge !== undefined || this.elicitationBridge !== undefined;
+  }
+
+  private async withBoundHostContext<T>(
+    serverKey: string,
+    hostMcp: McpServer,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const prevTail = this.hostContextTailByServer.get(serverKey) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const tail = prevTail.then(() => gate);
+    this.hostContextTailByServer.set(serverKey, tail);
+    await prevTail;
+    this.activeHostByServer.set(serverKey, hostMcp);
+    try {
+      return await runWithHostMcpAsync(hostMcp, fn);
+    } finally {
+      this.activeHostByServer.delete(serverKey);
+      release();
+      if (this.hostContextTailByServer.get(serverKey) === tail) {
+        this.hostContextTailByServer.delete(serverKey);
+      }
+    }
   }
 
   private async withToolCallResilience<T>(serverKey: string, fn: () => Promise<T>): Promise<T> {
@@ -563,5 +632,15 @@ export class UpstreamHub {
     };
     this.telemetry.set(serverKey, created);
     return created;
+  }
+
+  private emitListChanged(serverKey: string, kind: UpstreamListChangedKind): void {
+    for (const listener of this.listChangedListeners) {
+      try {
+        listener({ serverKey, kind });
+      } catch {
+        // ignore listener failures
+      }
+    }
   }
 }

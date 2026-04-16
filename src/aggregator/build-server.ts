@@ -3,6 +3,7 @@
  * Implementation lives in {@link ./pipeline.js}.
  */
 export {
+  attachDynamicCatalogRefresh,
   attachHostListChangedSubscriptions,
   connectAggregatedHub,
   connectAndProbeWithTimeout,

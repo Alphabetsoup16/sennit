@@ -26,7 +26,7 @@ describe("HTTP gateway host session context", () => {
     }
   });
 
-  it("keeps roots/sampling/elicitation bound to the invoking host session", async () => {
+  async function bootGateway(): Promise<URL> {
     gateway = await startServeHttpGateway(
       {
         version: 1,
@@ -48,39 +48,56 @@ describe("HTTP gateway host session context", () => {
       },
     );
     const addr = gateway.server.address() as AddressInfo;
-    const url = new URL(`http://127.0.0.1:${addr.port}/mcp`);
+    return new URL(`http://127.0.0.1:${addr.port}/mcp`);
+  }
 
-    async function makeClient(identity: string, roots: Root[]): Promise<Client> {
-      const client = new Client(
-        { name: `host-${identity}`, version: "1.0.0" },
-        { capabilities: { roots: {}, sampling: {}, elicitation: { form: {} } } },
-      );
-      client.setRequestHandler(ListRootsRequestSchema, async () => ({ roots }));
-      client.setRequestHandler(CreateMessageRequestSchema, async () => ({
-        role: "assistant",
-        model: "test",
-        content: { type: "text", text: `sample:${identity}` },
-        stopReason: "endTurn",
-      }));
-      client.setRequestHandler(ElicitRequestSchema, async () => ({
-        action: "accept",
-        content: { who: identity },
-      }));
-      await client.connect(new StreamableHTTPClientTransport(url));
-      clients.push(client);
-      return client;
-    }
+  async function makeClient(url: URL, identity: string, roots: Root[]): Promise<Client> {
+    const client = new Client(
+      { name: `host-${identity}`, version: "1.0.0" },
+      { capabilities: { roots: {}, sampling: {}, elicitation: { form: {} } } },
+    );
+    client.setRequestHandler(ListRootsRequestSchema, async () => ({ roots }));
+    client.setRequestHandler(CreateMessageRequestSchema, async () => ({
+      role: "assistant",
+      model: "test",
+      content: { type: "text", text: `sample:${identity}` },
+      stopReason: "endTurn",
+    }));
+    client.setRequestHandler(ElicitRequestSchema, async () => ({
+      action: "accept",
+      content: { who: identity },
+    }));
+    await client.connect(new StreamableHTTPClientTransport(url));
+    clients.push(client);
+    return client;
+  }
 
-    const a = await makeClient("A", [{ uri: "file:///A", name: "A" }]);
-    await makeClient("B", [{ uri: "file:///B", name: "B" }]); // last-connected on purpose
+  async function assertIdentityBound(client: Client, id: string): Promise<void> {
+    const rootsOut = await client.callTool({ name: "ctx__mock.rootsSnapshot", arguments: {} });
+    expect(JSON.parse(firstTextBlock(rootsOut)) as Root[]).toEqual([{ uri: `file:///${id}`, name: id }]);
 
-    const rootsOut = await a.callTool({ name: "ctx__mock.rootsSnapshot", arguments: {} });
-    expect(JSON.parse(firstTextBlock(rootsOut)) as Root[]).toEqual([{ uri: "file:///A", name: "A" }]);
+    const sampleOut = await client.callTool({ name: "ctx__mock.sampleIdentity", arguments: {} });
+    expect(firstTextBlock(sampleOut)).toBe(`sample:${id}`);
 
-    const sampleOut = await a.callTool({ name: "ctx__mock.sampleIdentity", arguments: {} });
-    expect(firstTextBlock(sampleOut)).toBe("sample:A");
+    const elicitOut = await client.callTool({ name: "ctx__mock.elicitIdentity", arguments: {} });
+    expect(JSON.parse(firstTextBlock(elicitOut))).toMatchObject({ action: "accept", content: { who: id } });
+  }
 
-    const elicitOut = await a.callTool({ name: "ctx__mock.elicitIdentity", arguments: {} });
-    expect(JSON.parse(firstTextBlock(elicitOut))).toMatchObject({ action: "accept", content: { who: "A" } });
+  it("keeps roots/sampling/elicitation bound to the invoking host session", async () => {
+    const url = await bootGateway();
+    const a = await makeClient(url, "A", [{ uri: "file:///A", name: "A" }]);
+    await makeClient(url, "B", [{ uri: "file:///B", name: "B" }]); // last-connected on purpose
+    await assertIdentityBound(a, "A");
+  });
+
+  it("keeps host context isolated under interleaved concurrent calls", async () => {
+    const url = await bootGateway();
+    const a = await makeClient(url, "A", [{ uri: "file:///A", name: "A" }]);
+    const b = await makeClient(url, "B", [{ uri: "file:///B", name: "B" }]);
+
+    await Promise.all([
+      Promise.all([assertIdentityBound(a, "A"), assertIdentityBound(a, "A")]),
+      Promise.all([assertIdentityBound(b, "B"), assertIdentityBound(b, "B")]),
+    ]);
   });
 });

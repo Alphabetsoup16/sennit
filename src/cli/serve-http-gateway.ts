@@ -5,6 +5,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import {
+  attachDynamicCatalogRefresh,
   attachHostListChangedSubscriptions,
   connectAggregatedHub,
   registerAggregatorSurface,
@@ -29,6 +30,7 @@ type SessionRecord = {
   transport: StreamableHTTPServerTransport;
   mcp: McpServer;
   detach: () => void;
+  detachDynamic: () => void;
 };
 
 function bodyLooksLikeInitialize(body: unknown): boolean {
@@ -105,18 +107,27 @@ export async function startServeHttpGateway(
       { name: "sennit", version: VERSION },
       { capabilities: { tools: {}, prompts: {} } },
     );
-    await registerAggregatorSurface(mcp, hub, config, toolCatalogs, promptCatalogs, rootsBridge);
+    const state = await registerAggregatorSurface(
+      mcp,
+      hub,
+      config,
+      toolCatalogs,
+      promptCatalogs,
+      rootsBridge,
+    );
+    const detachDynamic = attachDynamicCatalogRefresh(mcp, hub, config, rootsBridge, state);
     const detach = attachHostListChangedSubscriptions(mcp, hub.listChangedFanout, config);
     transport.onclose = () => {
       const sid = transport.sessionId;
       if (sid) {
         sessions.delete(sid);
       }
+      detachDynamic();
       detach();
       void mcp.close().catch(() => undefined);
     };
     await mcp.connect(transport);
-    return { transport, mcp, detach };
+    return { transport, mcp, detach, detachDynamic };
   }
 
   const mountPath = options.mcpPath.endsWith("/") ? options.mcpPath.slice(0, -1) : options.mcpPath;
@@ -170,6 +181,7 @@ export async function startServeHttpGateway(
     close: async () => {
       await Promise.all(
         [...sessions.values()].map(async (s) => {
+          s.detachDynamic();
           s.detach();
           s.transport.onclose = undefined;
           await s.transport.close().catch(() => undefined);

@@ -10,6 +10,7 @@ import {
 } from "../lib/resource-facade.js";
 import { listAllResourceTemplates, listAllResources } from "./list-resources.js";
 import type { UpstreamHub } from "./upstream-hub.js";
+import type { RemovableRegistration } from "./register-proxied-surface.js";
 
 type ResourceRow = {
   serverKey: string;
@@ -39,7 +40,7 @@ export async function registerProxyResources(
   mcp: McpServer,
   hub: UpstreamHub,
   config: SennitConfig,
-): Promise<void> {
+): Promise<RemovableRegistration[]> {
   const rows: ResourceRow[] = [];
   const templateRows: TemplateRow[] = [];
   const seenRegistrationNames = new Set<string>();
@@ -132,13 +133,14 @@ export async function registerProxyResources(
   }
 
   if (rows.length === 0 && templateRows.length === 0) {
-    return;
+    return [];
   }
 
   mcp.server.registerCapabilities({ resources: {} });
+  const handles: RemovableRegistration[] = [];
 
   for (const row of rows) {
-    mcp.registerResource(
+    const h = mcp.registerResource(
       row.registrationName,
       row.facadeUri,
       {
@@ -168,12 +170,13 @@ export async function registerProxyResources(
           }
         }),
     );
+    handles.push(h);
   }
 
   for (const row of templateRows) {
     const pattern = facadeResourceTemplatePattern(row.serverKey, row.upstreamUriTemplate);
     const rt = new ResourceTemplate(pattern, { list: undefined });
-    mcp.registerResource(
+    const h = mcp.registerResource(
       row.registrationName,
       rt,
       {
@@ -210,7 +213,9 @@ export async function registerProxyResources(
           }
         }),
     );
+    handles.push(h);
   }
+  return handles;
 }
 
 /** For operator docs / meta JSON. */

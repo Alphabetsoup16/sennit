@@ -14,14 +14,16 @@ import type { UpstreamHub } from "./upstream-hub.js";
 
 type ListedTool = Awaited<ReturnType<Client["listTools"]>>["tools"][number];
 type ListedPrompt = Awaited<ReturnType<Client["listPrompts"]>>["prompts"][number];
+export type RemovableRegistration = { remove: () => void };
 
 export async function registerProxiedTools(
   mcp: McpServer,
   hub: UpstreamHub,
   config: SennitConfig,
   upstreamToolCatalogs: Array<{ serverKey: string; tools: ListedTool[] }>,
-): Promise<void> {
+): Promise<RemovableRegistration[]> {
   const seen = new Set<string>();
+  const handles: RemovableRegistration[] = [];
   for (const { serverKey, tools } of upstreamToolCatalogs) {
     const allow = config.servers[serverKey]?.tools;
 
@@ -35,7 +37,7 @@ export async function registerProxiedTools(
       const rawDescription =
         tool.description ?? `Proxied from upstream "${serverKey}" (tool: ${tool.name}).`;
 
-      mcp.registerTool(
+      const h = mcp.registerTool(
         full,
         {
           description: truncateForToolList(rawDescription, config.toolsListDescriptionMaxChars),
@@ -80,8 +82,10 @@ export async function registerProxiedTools(
             }
           }),
       );
+      handles.push(h);
     }
   }
+  return handles;
 }
 
 export async function registerProxiedPrompts(
@@ -89,8 +93,9 @@ export async function registerProxiedPrompts(
   hub: UpstreamHub,
   config: SennitConfig,
   upstreamPromptCatalogs: Array<{ serverKey: string; prompts: ListedPrompt[] }>,
-): Promise<void> {
+): Promise<RemovableRegistration[]> {
   const seenPrompts = new Set<string>();
+  const handles: RemovableRegistration[] = [];
   for (const { serverKey, prompts } of upstreamPromptCatalogs) {
     const allow = config.servers[serverKey]?.prompts;
 
@@ -105,7 +110,7 @@ export async function registerProxiedPrompts(
         prompt.description ?? `Proxied from upstream "${serverKey}" (prompt: ${prompt.name}).`;
 
       if (Object.keys(shape).length === 0) {
-        mcp.registerPrompt(
+        const h = mcp.registerPrompt(
           full,
           { description, title: prompt.title },
           async () =>
@@ -126,8 +131,9 @@ export async function registerProxiedPrompts(
               return r;
             }),
         );
+        handles.push(h);
       } else {
-        mcp.registerPrompt(
+        const h = mcp.registerPrompt(
           full,
           { description, title: prompt.title, argsSchema: shape },
           async (args) =>
@@ -156,9 +162,11 @@ export async function registerProxiedPrompts(
               return r;
             }),
         );
+        handles.push(h);
       }
     }
   }
+  return handles;
 }
 
 /** For `sennit.meta` text only. */
