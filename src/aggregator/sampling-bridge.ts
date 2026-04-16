@@ -1,6 +1,6 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CreateMessageRequest, CreateMessageResult, CreateMessageResultWithTools } from "@modelcontextprotocol/sdk/types.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
+import { getActiveHostMcp } from "../lib/active-host-mcp.js";
 import { errorMessage } from "../lib/error-message.js";
 
 /**
@@ -13,9 +13,16 @@ export type UpstreamSamplingBridge = {
   ) => Promise<CreateMessageResult | CreateMessageResultWithTools>;
 };
 
-export function makeUpstreamSamplingBridge(mcp: McpServer): UpstreamSamplingBridge {
+export function makeUpstreamSamplingBridge(): UpstreamSamplingBridge {
   return {
     forwardCreateMessage: async (params) => {
+      const mcp = getActiveHostMcp();
+      if (!mcp) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          "No active host MCP session for sampling (declare client capabilities.sampling).",
+        );
+      }
       try {
         return await mcp.server.createMessage(params);
       } catch (e) {

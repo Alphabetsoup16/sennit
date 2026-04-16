@@ -6,6 +6,8 @@ import {
   StdioClientTransport,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import {
+  type CallToolRequest,
+  type CallToolResult,
   CreateMessageRequestSchema,
   ElicitRequestSchema,
   ListRootsRequestSchema,
@@ -13,12 +15,19 @@ import {
 import { assertHttpOrHttpsUrl } from "../lib/assert-http-upstream-url.js";
 import { sennitJsonLog } from "../lib/sennit-json-log.js";
 import { wrapFetchWithDeadline } from "../lib/fetch-timeout.js";
+import { oauthClientCredentialsFetch } from "../lib/oauth-client-credentials.js";
+import { resolveHeaderTemplates } from "../lib/resolve-env-template.js";
+import {
+  getActiveHostMcp,
+  getCurrentHostMcp,
+  runWithHostMcpAsync,
+} from "../lib/active-host-mcp.js";
 import type { SennitConfig } from "../config/schema.js";
 import { applyRootsPolicy, applyUpstreamRootRewrites } from "./roots-policy.js";
 import type { UpstreamElicitationBridge } from "./elicitation-bridge.js";
 import type { UpstreamRootsBridge } from "./roots-bridge.js";
 import type { UpstreamSamplingBridge } from "./sampling-bridge.js";
-import type { UpstreamHostListChangedBridge } from "./host-list-changed-bridge.js";
+import type { HostListChangedFanout } from "./host-list-changed-bridge.js";
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) {
@@ -42,7 +51,22 @@ function listChangedNotifyHandler(notify: () => void) {
 /** Shared URL validation, optional headers, and deadline-wrapped `fetch` for HTTP-based MCP transports. */
 function urlAndOptsForRemoteMcp(
   serverKey: string,
-  srv: { url: string; headers?: Record<string, string>; httpRequestTimeoutMs?: number },
+  srv: {
+    url: string;
+    headers?: Record<string, string>;
+    httpRequestTimeoutMs?: number;
+    auth?: {
+      type: "oauthClientCredentials";
+      tokenUrl: string;
+      clientId: string;
+      clientSecretEnv: string;
+      scope?: string;
+      audience?: string;
+      cacheKey?: string;
+      minValidityMs?: number;
+    };
+  },
+  env: Record<string, string>,
 ): {
   url: URL;
   requestInitAndFetch: {
@@ -51,15 +75,24 @@ function urlAndOptsForRemoteMcp(
   };
 } {
   const url = assertHttpOrHttpsUrl(srv.url, `servers.${serverKey}.url`);
-  const fetchImpl =
-    srv.httpRequestTimeoutMs !== undefined
-      ? wrapFetchWithDeadline(srv.httpRequestTimeoutMs)
-      : undefined;
+  const resolvedHeaders = resolveHeaderTemplates(srv.headers, env);
+  const timedFetch =
+    srv.httpRequestTimeoutMs !== undefined ? wrapFetchWithDeadline(srv.httpRequestTimeoutMs) : undefined;
+  let fetchImpl = timedFetch;
+  if (srv.auth?.type === "oauthClientCredentials") {
+    fetchImpl = oauthClientCredentialsFetch(
+      serverKey,
+      srv.auth,
+      timedFetch ?? globalThis.fetch,
+      resolvedHeaders,
+      env,
+    );
+  }
   return {
     url,
     requestInitAndFetch: {
-      ...(srv.headers && Object.keys(srv.headers).length > 0
-        ? { requestInit: { headers: srv.headers } }
+      ...(resolvedHeaders && Object.keys(resolvedHeaders).length > 0
+        ? { requestInit: { headers: resolvedHeaders } }
         : {}),
       ...(fetchImpl ? { fetch: fetchImpl } : {}),
     },
@@ -72,6 +105,19 @@ export type UpstreamHubConnectOptions = {
 
 type ServerEntry = SennitConfig["servers"][string];
 
+type CircuitState = {
+  failures: number;
+  openUntilMs?: number;
+  halfOpenInFlight: number;
+};
+
+type UpstreamTelemetry = {
+  callsOk: number;
+  callsErr: number;
+  queueRejected: number;
+  circuitRejected: number;
+};
+
 /** Manages one MCP `Client` per configured upstream (stdio, Streamable HTTP, or legacy SSE). */
 export class UpstreamHub {
   private config: SennitConfig | null = null;
@@ -81,13 +127,22 @@ export class UpstreamHub {
   private readonly clients = new Map<string, Client>();
   private readonly connectPromises = new Map<string, Promise<Client>>();
   private readonly idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly queueWaiters = new Map<string, Array<() => void>>();
+  private readonly queuedCounts = new Map<string, number>();
+  private readonly inFlightCalls = new Map<string, number>();
+  private readonly circuitStates = new Map<string, CircuitState>();
+  private readonly telemetry = new Map<string, UpstreamTelemetry>();
+
+  readonly listChangedFanout: HostListChangedFanout;
 
   constructor(
+    listChangedFanout: HostListChangedFanout,
     private readonly rootsBridge?: UpstreamRootsBridge,
     private readonly samplingBridge?: UpstreamSamplingBridge,
     private readonly elicitationBridge?: UpstreamElicitationBridge,
-    private readonly hostListChangedBridge?: UpstreamHostListChangedBridge,
-  ) {}
+  ) {
+    this.listChangedFanout = listChangedFanout;
+  }
 
   /** Configured upstream keys (stable for `sennit.meta` after `connect`). */
   configuredServerKeys(): string[] {
@@ -206,25 +261,20 @@ export class UpstreamHub {
     }
 
     const clientOptions: ClientOptions = { capabilities: clientCapabilities };
-    const bridge = this.hostListChangedBridge;
-    if (
-      bridge &&
-      (this.dynamicToolList || this.dynamicResourceList || this.dynamicPromptList)
-    ) {
+    const fanout = this.listChangedFanout;
+    if (this.dynamicToolList || this.dynamicResourceList || this.dynamicPromptList) {
       clientOptions.listChanged = {
         ...(this.dynamicToolList
-          ? { tools: listChangedNotifyHandler(() => bridge.signalHostToolListChanged()) }
+          ? { tools: listChangedNotifyHandler(() => fanout.signalHostToolListChanged()) }
           : {}),
         ...(this.dynamicResourceList
           ? {
-              resources: listChangedNotifyHandler(() =>
-                bridge.signalHostResourceListChanged(),
-              ),
+              resources: listChangedNotifyHandler(() => fanout.signalHostResourceListChanged()),
             }
           : {}),
         ...(this.dynamicPromptList
           ? {
-              prompts: listChangedNotifyHandler(() => bridge.signalHostPromptListChanged()),
+              prompts: listChangedNotifyHandler(() => fanout.signalHostPromptListChanged()),
             }
           : {}),
       };
@@ -245,7 +295,7 @@ export class UpstreamHub {
       });
       await client.connect(transport);
     } else if (srv.transport === "streamableHttp") {
-      const { url, requestInitAndFetch } = urlAndOptsForRemoteMcp(serverKey, srv);
+      const { url, requestInitAndFetch } = urlAndOptsForRemoteMcp(serverKey, srv, baseEnv);
       const reconnectionOptions =
         srv.streamableHttpReconnection !== undefined
           ? {
@@ -264,7 +314,7 @@ export class UpstreamHub {
       });
       await client.connect(transport);
     } else if (srv.transport === "sse") {
-      const { url, requestInitAndFetch } = urlAndOptsForRemoteMcp(serverKey, srv);
+      const { url, requestInitAndFetch } = urlAndOptsForRemoteMcp(serverKey, srv, baseEnv);
       const transport = new SSEClientTransport(url, requestInitAndFetch);
       await client.connect(transport);
     } else {
@@ -276,7 +326,13 @@ export class UpstreamHub {
     if (this.rootsBridge) {
       const bridge = this.rootsBridge;
       client.setRequestHandler(ListRootsRequestSchema, async () => {
-        const hostRoots = await bridge.getHostRoots();
+        const hostMcp = getCurrentHostMcp() ?? getActiveHostMcp();
+        if (!hostMcp) {
+          bridge.lastHostRootsError =
+            "no active host MCP session (roots/list must run within an active host request context)";
+          return { roots: [] };
+        }
+        const hostRoots = await runWithHostMcpAsync(hostMcp, () => bridge.getHostRoots());
         const filtered = applyRootsPolicy(bridge.policy, hostRoots);
         return {
           roots: applyUpstreamRootRewrites(serverKey, bridge.policy, filtered),
@@ -285,15 +341,27 @@ export class UpstreamHub {
     }
     if (this.samplingBridge) {
       const sampling = this.samplingBridge;
-      client.setRequestHandler(CreateMessageRequestSchema, async (request) =>
-        sampling.forwardCreateMessage(request.params),
-      );
+      client.setRequestHandler(CreateMessageRequestSchema, async (request) => {
+        const hostMcp = getCurrentHostMcp() ?? getActiveHostMcp();
+        if (!hostMcp) {
+          throw new Error(
+            "No active host MCP session for sampling (sampling/createMessage must run in the invoking host session).",
+          );
+        }
+        return runWithHostMcpAsync(hostMcp, () => sampling.forwardCreateMessage(request.params));
+      });
     }
     if (this.elicitationBridge) {
       const elicitation = this.elicitationBridge;
-      client.setRequestHandler(ElicitRequestSchema, async (request) =>
-        elicitation.forwardElicit(request.params),
-      );
+      client.setRequestHandler(ElicitRequestSchema, async (request) => {
+        const hostMcp = getCurrentHostMcp() ?? getActiveHostMcp();
+        if (!hostMcp) {
+          throw new Error(
+            "No active host MCP session for elicitation (elicitation/create must run in the invoking host session).",
+          );
+        }
+        return runWithHostMcpAsync(hostMcp, () => elicitation.forwardElicit(request.params));
+      });
     }
 
     return client;
@@ -320,6 +388,11 @@ export class UpstreamHub {
     }
     this.idleTimers.clear();
     this.connectPromises.clear();
+    this.queueWaiters.clear();
+    this.queuedCounts.clear();
+    this.inFlightCalls.clear();
+    this.circuitStates.clear();
+    this.telemetry.clear();
     this.config = null;
     this.dynamicToolList = false;
     this.dynamicResourceList = false;
@@ -330,5 +403,165 @@ export class UpstreamHub {
       ),
     );
     this.clients.clear();
+  }
+
+  circuitState(serverKey: string): { state: "closed" | "open" | "half_open"; openUntilMs?: number } {
+    const st = this.circuitStates.get(serverKey);
+    if (!st) {
+      return { state: "closed" };
+    }
+    const now = Date.now();
+    if (st.openUntilMs !== undefined && st.openUntilMs > now) {
+      return { state: "open", openUntilMs: st.openUntilMs };
+    }
+    if (st.openUntilMs !== undefined && st.openUntilMs <= now) {
+      return { state: "half_open" };
+    }
+    return { state: "closed" };
+  }
+
+  telemetrySnapshot(): Record<string, UpstreamTelemetry> {
+    return Object.fromEntries(this.configuredServerKeys().map((k) => [k, this.telemetryFor(k)]));
+  }
+
+  async callTool(
+    serverKey: string,
+    params: CallToolRequest["params"],
+    options?: { signal?: AbortSignal },
+  ): Promise<CallToolResult> {
+    const client = await this.ensureClient(serverKey);
+    if (!client) {
+      throw new Error(`unknown serverKey: ${serverKey}`);
+    }
+    return this.withToolCallResilience(serverKey, () =>
+      client.callTool(params, undefined, { signal: options?.signal }) as Promise<CallToolResult>,
+    );
+  }
+
+  private async withToolCallResilience<T>(serverKey: string, fn: () => Promise<T>): Promise<T> {
+    const srv = this.config?.servers[serverKey];
+    if (!srv) {
+      throw new Error(`unknown serverKey: ${serverKey}`);
+    }
+    await this.acquireConcurrencySlot(serverKey, srv.maxConcurrentCalls, srv.maxQueuedCalls);
+    let breakerAcquiredHalfOpen = false;
+    try {
+      const breaker = srv.circuitBreaker;
+      if (breaker) {
+        const threshold = breaker.failureThreshold ?? 5;
+        const cooldownMs = breaker.cooldownMs ?? 30_000;
+        const halfOpenMaxCalls = breaker.halfOpenMaxCalls ?? 1;
+        const st = this.circuitStates.get(serverKey) ?? { failures: 0, halfOpenInFlight: 0 };
+        const now = Date.now();
+        if (st.openUntilMs !== undefined && st.openUntilMs > now) {
+          const t = this.telemetryFor(serverKey);
+          t.circuitRejected += 1;
+          throw new Error(
+            `circuit open for ${JSON.stringify(serverKey)} until ${new Date(st.openUntilMs).toISOString()}`,
+          );
+        }
+        if (st.openUntilMs !== undefined && st.openUntilMs <= now) {
+          if (st.halfOpenInFlight >= halfOpenMaxCalls) {
+            const t = this.telemetryFor(serverKey);
+            t.circuitRejected += 1;
+            throw new Error(`circuit half-open saturated for ${JSON.stringify(serverKey)}`);
+          }
+          st.halfOpenInFlight += 1;
+          breakerAcquiredHalfOpen = true;
+          this.circuitStates.set(serverKey, st);
+        } else {
+          this.circuitStates.set(serverKey, st);
+        }
+        try {
+          const out = await fn();
+          const t = this.telemetryFor(serverKey);
+          t.callsOk += 1;
+          st.failures = 0;
+          st.openUntilMs = undefined;
+          if (breakerAcquiredHalfOpen && st.halfOpenInFlight > 0) {
+            st.halfOpenInFlight -= 1;
+          }
+          this.circuitStates.set(serverKey, st);
+          return out;
+        } catch (e) {
+          const t = this.telemetryFor(serverKey);
+          t.callsErr += 1;
+          st.failures += 1;
+          if (st.failures >= threshold) {
+            st.openUntilMs = Date.now() + cooldownMs;
+            st.failures = 0;
+          }
+          if (breakerAcquiredHalfOpen && st.halfOpenInFlight > 0) {
+            st.halfOpenInFlight -= 1;
+          }
+          this.circuitStates.set(serverKey, st);
+          throw e;
+        }
+      }
+      const out = await fn();
+      const t = this.telemetryFor(serverKey);
+      t.callsOk += 1;
+      return out;
+    } finally {
+      this.releaseConcurrencySlot(serverKey);
+    }
+  }
+
+  private async acquireConcurrencySlot(
+    serverKey: string,
+    maxConcurrentCalls: number | undefined,
+    maxQueuedCalls: number | undefined,
+  ): Promise<void> {
+    if (maxConcurrentCalls === undefined) {
+      return;
+    }
+    for (;;) {
+      const inFlight = this.inFlightCalls.get(serverKey) ?? 0;
+      if (inFlight < maxConcurrentCalls) {
+        this.inFlightCalls.set(serverKey, inFlight + 1);
+        return;
+      }
+      const queued = this.queuedCounts.get(serverKey) ?? 0;
+      if (maxQueuedCalls !== undefined && queued >= maxQueuedCalls) {
+        const t = this.telemetryFor(serverKey);
+        t.queueRejected += 1;
+        throw new Error(`upstream queue full for ${JSON.stringify(serverKey)}`);
+      }
+      await new Promise<void>((resolve) => {
+        const waiters = this.queueWaiters.get(serverKey) ?? [];
+        this.queueWaiters.set(serverKey, waiters);
+        waiters.push(resolve);
+        this.queuedCounts.set(serverKey, queued + 1);
+      });
+      const nextQueued = Math.max(0, (this.queuedCounts.get(serverKey) ?? 1) - 1);
+      this.queuedCounts.set(serverKey, nextQueued);
+    }
+  }
+
+  private releaseConcurrencySlot(serverKey: string): void {
+    const curr = this.inFlightCalls.get(serverKey) ?? 0;
+    if (curr > 0) {
+      this.inFlightCalls.set(serverKey, curr - 1);
+    }
+    const waiters = this.queueWaiters.get(serverKey);
+    const next = waiters?.shift();
+    if (next) {
+      next();
+    }
+  }
+
+  private telemetryFor(serverKey: string): UpstreamTelemetry {
+    const existing = this.telemetry.get(serverKey);
+    if (existing) {
+      return existing;
+    }
+    const created: UpstreamTelemetry = {
+      callsOk: 0,
+      callsErr: 0,
+      queueRejected: 0,
+      circuitRejected: 0,
+    };
+    this.telemetry.set(serverKey, created);
+    return created;
   }
 }

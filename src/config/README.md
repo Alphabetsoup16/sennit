@@ -13,13 +13,20 @@ Each key is an upstream label (must not contain **`__`** — reserved for merged
 
 | Transport | Typical fields |
 |-----------|----------------|
-| **`stdio`** | **`command`**, **`args`**, optional **`env`**, **`cwd`**, **`tools` / `resources` / `resourceTemplates` / `prompts`**, **`lazy`**, **`idleTimeoutMs`**, **`toolCallTimeoutMs`** |
-| **`streamableHttp`** | **`url`** (`http`/`https` only), optional **`headers`**, **`httpRequestTimeoutMs`**, **`streamableHttpReconnection`**, same allowlists, **`lazy` / `idleTimeoutMs`**, **`toolCallTimeoutMs`** |
-| **`sse`** | Legacy SSE MCP endpoint: **`url`**, optional **`headers`**, **`httpRequestTimeoutMs`**, same allowlists and lifecycle fields as HTTP |
+| **`stdio`** | **`command`**, **`args`**, optional **`env`**, **`cwd`**, **`tools` / `resources` / `resourceTemplates` / `prompts`**, **`lazy`**, **`idleTimeoutMs`**, **`toolCallTimeoutMs`**, optional **`maxConcurrentCalls`**, **`maxQueuedCalls`**, **`circuitBreaker`** |
+| **`streamableHttp`** | **`url`** (`http`/`https` only), optional **`headers`**, **`auth`** (`oauthClientCredentials`), **`httpRequestTimeoutMs`**, **`streamableHttpReconnection`**, same allowlists, **`lazy` / `idleTimeoutMs`**, **`toolCallTimeoutMs`**, optional **`maxConcurrentCalls`**, **`maxQueuedCalls`**, **`circuitBreaker`** |
+| **`sse`** | Legacy SSE MCP endpoint: **`url`**, optional **`headers`**, optional **`auth`** (`oauthClientCredentials`), **`httpRequestTimeoutMs`**, same allowlists and lifecycle fields as HTTP, plus optional **`maxConcurrentCalls`**, **`maxQueuedCalls`**, **`circuitBreaker`** |
 
 Tool, prompt, and resource names still come from each upstream’s MCP listings after connect; allowlists only **filter** what Sennit exposes.
 
+Top-level `aliases` can expose host-facing virtual tools that delegate to `{ serverKey, toolName }` targets.
+
 **`toolCallTimeoutMs`:** caps proxied **`tools/call`** duration; implemented via the MCP client **`AbortSignal`** so in-flight requests are cancelled on the wire (not only a timer rejecting locally). Applies to namespaced tool proxies and **`sennit.batch_call`**.
+
+**`auth` (OAuth client credentials):** set `servers.<key>.auth` with `type: oauthClientCredentials`, `tokenUrl`, `clientId`, and `clientSecretEnv`. Sennit fetches a bearer token, caches it under `~/.sennit/oauth-cache.json`, refreshes before expiry, and injects `Authorization: Bearer <token>` on upstream HTTP requests.
+Header values support `${ENV_VAR}` interpolation at runtime.
+
+**`maxConcurrentCalls` / `maxQueuedCalls` / `circuitBreaker`:** per-upstream resilience controls for proxied `tools/call` (namespaced and batch). Circuit breaker defaults: threshold 5 failures, cooldown 30s, half-open max 1 probe call.
 
 ## `roots`
 

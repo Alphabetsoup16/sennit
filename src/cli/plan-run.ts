@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import {
+  attachHostListChangedSubscriptions,
   connectAndProbeWithTimeout,
   createAggregator,
   finalizeAggregatorHandle,
@@ -110,7 +111,12 @@ export async function runPlan(
         promptCatalogs,
         phase.rootsBridge,
       );
-      const handle = finalizeAggregatorHandle(phase.mcp, phase.hub);
+      const detachHostListChanged = attachHostListChangedSubscriptions(
+        phase.mcp,
+        phase.hub.listChangedFanout,
+        config,
+      );
+      const handle = finalizeAggregatorHandle(phase.mcp, phase.hub, detachHostListChanged);
       try {
         const captured = await captureMergedCatalog(handle);
         mergedTools = captured.mergedTools;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { HostListChangedFanout } from "../src/aggregator/host-list-changed-bridge.js";
 import { UpstreamHub } from "../src/aggregator/upstream-hub.js";
 import { sennitConfigSchema } from "../src/config/schema.js";
 
@@ -9,7 +10,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 describe("UpstreamHub", () => {
   it("closes successful connections when a later upstream fails to connect", async () => {
     const mockPath = join(root, "dist", "fixtures", "mock-upstream.js");
-    const hub = new UpstreamHub();
+    const hub = new UpstreamHub(new HostListChangedFanout());
     const config = sennitConfigSchema.parse({
       version: 1,
       servers: {
@@ -32,7 +33,7 @@ describe("UpstreamHub", () => {
   });
 
   it("does not spawn upstreams when connect signal is already aborted", async () => {
-    const hub = new UpstreamHub();
+    const hub = new UpstreamHub(new HostListChangedFanout());
     const config = sennitConfigSchema.parse({
       version: 1,
       servers: {

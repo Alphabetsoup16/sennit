@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  importServersFromHostMcpJson,
   importStdioServersFromHostMcpJson,
   looksLikeSennitServe,
 } from "../src/cli/import-host-mcp.js";
@@ -31,14 +32,14 @@ describe("importStdioServersFromHostMcpJson", () => {
     );
   });
 
-  it("skips when url is set (non-stdio)", () => {
+  it("does not include url entries in stdio-only import", () => {
     const { servers, skipped } = importStdioServersFromHostMcpJson({
       mcpServers: {
         hybrid: { command: "npx", args: ["x"], url: "https://x" },
       },
     });
     expect(servers.hybrid).toBeUndefined();
-    expect(skipped[0]?.reason).toMatch(/url/);
+    expect(skipped).toEqual([]);
   });
 
   it("skips likely Sennit aggregator to avoid nesting", () => {
@@ -58,6 +59,43 @@ describe("importStdioServersFromHostMcpJson", () => {
     const { servers, skipped } = importStdioServersFromHostMcpJson({});
     expect(servers).toEqual({});
     expect(skipped[0]?.reason).toMatch(/mcpServers/);
+  });
+});
+
+describe("importServersFromHostMcpJson", () => {
+  it("imports streamableHttp for url entries", () => {
+    const { servers, skipped } = importServersFromHostMcpJson({
+      mcpServers: {
+        remote: {
+          url: "https://example.com/mcp",
+          headers: { Authorization: "Bearer xyz" },
+          httpRequestTimeoutMs: 2500,
+        },
+      },
+    });
+    expect(skipped).toEqual([]);
+    expect(servers.remote).toEqual({
+      transport: "streamableHttp",
+      url: "https://example.com/mcp",
+      headers: { Authorization: "Bearer xyz" },
+      httpRequestTimeoutMs: 2500,
+    });
+  });
+
+  it("imports sse when entry transport is sse", () => {
+    const { servers, skipped } = importServersFromHostMcpJson({
+      mcpServers: {
+        legacy: {
+          transport: "sse",
+          url: "https://example.com/sse",
+        },
+      },
+    });
+    expect(skipped).toEqual([]);
+    expect(servers.legacy).toEqual({
+      transport: "sse",
+      url: "https://example.com/sse",
+    });
   });
 });
 

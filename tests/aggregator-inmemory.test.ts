@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BATCH_CALL_MAX_ITEMS } from "../src/lib/limits.js";
 import { sennitConfigSchema } from "../src/config/schema.js";
+import { distMockUpstreamPath } from "./cli-fixtures.js";
 import { firstTextBlock } from "./mcp-helpers.js";
 import { withInMemoryAggregator } from "./test-utils.js";
 
@@ -59,5 +60,34 @@ describe("createAggregator (in-memory)", () => {
       const text = firstTextBlock(out);
       expect(text.toLowerCase()).toMatch(/at most|too big/);
     });
+  });
+
+  it("registers alias tools and delegates to upstream tool", async () => {
+    await withInMemoryAggregator(
+      sennitConfigSchema.parse({
+        version: 1,
+        servers: {
+          mock: {
+            transport: "stdio",
+            command: process.execPath,
+            args: [distMockUpstreamPath()],
+          },
+        },
+        aliases: {
+          ping: {
+            serverKey: "mock",
+            toolName: "mock.ping",
+            description: "friendly alias",
+          },
+        },
+      }),
+      async (client) => {
+        const { tools } = await client.listTools();
+        expect(tools.some((t) => t.name === "ping")).toBe(true);
+        const out = await client.callTool({ name: "ping", arguments: { hello: "world" } });
+        const text = firstTextBlock(out);
+        expect(text).toContain("pong");
+      },
+    );
   });
 });

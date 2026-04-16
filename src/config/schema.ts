@@ -22,6 +22,14 @@ export const rootsPolicySchema = z.object({
 
 export type RootsPolicy = z.infer<typeof rootsPolicySchema>;
 
+const circuitBreakerSchema = z
+  .object({
+    failureThreshold: z.number().int().positive().optional(),
+    cooldownMs: z.number().int().positive().optional(),
+    halfOpenMaxCalls: z.number().int().positive().optional(),
+  })
+  .optional();
+
 /** One stdio-backed upstream MCP server. */
 export const stdioServerSchema = z.object({
   transport: z.literal("stdio"),
@@ -52,6 +60,9 @@ export const stdioServerSchema = z.object({
    * Uses the MCP client `AbortSignal` so the SDK sends `notifications/cancelled` for the JSON-RPC request.
    */
   toolCallTimeoutMs: z.number().int().positive().optional(),
+  maxConcurrentCalls: z.number().int().positive().optional(),
+  maxQueuedCalls: z.number().int().nonnegative().optional(),
+  circuitBreaker: circuitBreakerSchema,
 });
 
 export type StdioServerConfig = z.infer<typeof stdioServerSchema>;
@@ -65,6 +76,20 @@ const streamableHttpReconnectionSchema = z
   })
   .optional();
 
+const oauthClientCredentialsAuthSchema = z.object({
+  type: z.literal("oauthClientCredentials"),
+  tokenUrl: z.string().url(),
+  clientId: z.string().min(1),
+  /** Name of environment variable containing the client secret. */
+  clientSecretEnv: z.string().min(1),
+  scope: z.string().optional(),
+  audience: z.string().optional(),
+  /** Optional override for cache key when multiple upstreams share credentials. */
+  cacheKey: z.string().min(1).optional(),
+  /** Refresh if token expires within this window (default 60s). */
+  minValidityMs: z.number().int().positive().optional(),
+});
+
 /** Remote upstream using Streamable HTTP (MCP client transport). */
 export const streamableHttpServerSchema = z.object({
   transport: z.literal("streamableHttp"),
@@ -75,6 +100,8 @@ export const streamableHttpServerSchema = z.object({
   httpRequestTimeoutMs: z.number().int().positive().optional(),
   /** Override Streamable HTTP transport reconnection backoff (see MCP SDK `reconnectionOptions`). */
   streamableHttpReconnection: streamableHttpReconnectionSchema,
+  /** Optional OAuth client-credentials auth (Bearer token injected per request). */
+  auth: oauthClientCredentialsAuthSchema.optional(),
   /** If set, only these upstream tool names are exposed. */
   tools: z.array(z.string()).optional(),
   /** If set, only these upstream resource URIs are exposed (exact match). */
@@ -90,6 +117,9 @@ export const streamableHttpServerSchema = z.object({
    * Uses the MCP client `AbortSignal` so the SDK sends `notifications/cancelled` for the JSON-RPC request.
    */
   toolCallTimeoutMs: z.number().int().positive().optional(),
+  maxConcurrentCalls: z.number().int().positive().optional(),
+  maxQueuedCalls: z.number().int().nonnegative().optional(),
+  circuitBreaker: circuitBreakerSchema,
 });
 
 export type StreamableHttpServerConfig = z.infer<typeof streamableHttpServerSchema>;
@@ -100,6 +130,7 @@ export const sseServerSchema = z.object({
   url: z.string().url(),
   headers: z.record(z.string(), z.string()).optional(),
   httpRequestTimeoutMs: z.number().int().positive().optional(),
+  auth: oauthClientCredentialsAuthSchema.optional(),
   tools: z.array(z.string()).optional(),
   resources: z.array(z.string()).optional(),
   resourceTemplates: z.array(z.string()).optional(),
@@ -111,6 +142,9 @@ export const sseServerSchema = z.object({
    * Uses the MCP client `AbortSignal` so the SDK sends `notifications/cancelled` for the JSON-RPC request.
    */
   toolCallTimeoutMs: z.number().int().positive().optional(),
+  maxConcurrentCalls: z.number().int().positive().optional(),
+  maxQueuedCalls: z.number().int().nonnegative().optional(),
+  circuitBreaker: circuitBreakerSchema,
 });
 
 export type SseServerConfig = z.infer<typeof sseServerSchema>;
@@ -153,6 +187,17 @@ export const sennitConfigSchema = z
      * Omit for unbounded parallelism (subject to `BATCH_CALL_MAX_ITEMS`).
      */
     batchCallMaxConcurrency: z.number().int().positive().optional(),
+    /** Optional host-facing aliases for upstream tools. */
+    aliases: z
+      .record(
+        z.string(),
+        z.object({
+          serverKey: z.string().min(1),
+          toolName: z.string().min(1),
+          description: z.string().optional(),
+        }),
+      )
+      .optional(),
   })
   .superRefine((data, ctx) => {
     for (const key of Object.keys(data.servers)) {
@@ -172,6 +217,17 @@ export const sennitConfigSchema = z
           message: 'roots.allowUriPrefixes is required when roots.mode is "intersect"',
           path: ["roots", "allowUriPrefixes"],
         });
+      }
+    }
+    if (data.aliases) {
+      for (const [alias, target] of Object.entries(data.aliases)) {
+        if (!data.servers[target.serverKey]) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `aliases.${alias}.serverKey does not exist in servers`,
+            path: ["aliases", alias, "serverKey"],
+          });
+        }
       }
     }
   });

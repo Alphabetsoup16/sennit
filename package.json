@@ -26,11 +26,13 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "commander": "^14.0.3",
+    "express": "^5.2.1",
     "yaml": "^2.8.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/express": "^5.0.0",
     "@types/node": "^25.6.0",
     "eslint": "^10.2.0",
     "tsx": "^4.21.0",

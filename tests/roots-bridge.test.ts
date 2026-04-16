@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { makeUpstreamRootsBridge } from "../src/aggregator/roots-bridge.js";
 import { sennitConfigSchema } from "../src/config/schema.js";
+import { runWithHostMcpAsync } from "../src/lib/active-host-mcp.js";
 
 describe("makeUpstreamRootsBridge", () => {
   const mcp = {
@@ -15,7 +17,7 @@ describe("makeUpstreamRootsBridge", () => {
       servers: {},
       roots: { mode: "ignore" },
     });
-    expect(makeUpstreamRootsBridge(cfg, mcp as never)).toBeUndefined();
+    expect(makeUpstreamRootsBridge(cfg)).toBeUndefined();
   });
 
   it("returns bridge that reads host roots when mode is forward", async () => {
@@ -24,9 +26,9 @@ describe("makeUpstreamRootsBridge", () => {
       servers: {},
       roots: { mode: "forward" },
     });
-    const bridge = makeUpstreamRootsBridge(cfg, mcp as never);
+    const bridge = makeUpstreamRootsBridge(cfg);
     expect(bridge).toBeDefined();
-    const roots = await bridge!.getHostRoots();
+    const roots = await runWithHostMcpAsync(mcp as unknown as McpServer, () => bridge!.getHostRoots());
     expect(roots).toEqual([{ uri: "file:///x", name: "n" }]);
     expect(mcp.server.listRoots).toHaveBeenCalledOnce();
   });
@@ -40,9 +42,11 @@ describe("makeUpstreamRootsBridge", () => {
       servers: {},
       roots: { mode: "forward" },
     });
-    const bridge = makeUpstreamRootsBridge(cfg, mcpThrow as never);
+    const bridge = makeUpstreamRootsBridge(cfg);
     expect(bridge).toBeDefined();
-    await expect(bridge!.getHostRoots()).resolves.toEqual([]);
+    await expect(
+      runWithHostMcpAsync(mcpThrow as unknown as McpServer, () => bridge!.getHostRoots()),
+    ).resolves.toEqual([]);
     expect(bridge!.lastHostRootsError).toBe("no roots");
   });
 
@@ -62,10 +66,10 @@ describe("makeUpstreamRootsBridge", () => {
       servers: {},
       roots: { mode: "forward" },
     });
-    const bridge = makeUpstreamRootsBridge(cfg, mcp as never)!;
-    await bridge.getHostRoots();
+    const bridge = makeUpstreamRootsBridge(cfg)!;
+    await runWithHostMcpAsync(mcp as unknown as McpServer, () => bridge.getHostRoots());
     expect(bridge.lastHostRootsError).toBe("first fail");
-    const second = await bridge.getHostRoots();
+    const second = await runWithHostMcpAsync(mcp as unknown as McpServer, () => bridge.getHostRoots());
     expect(second).toEqual([{ uri: "file:///ok", name: "n" }]);
     expect(bridge.lastHostRootsError).toBeUndefined();
   });

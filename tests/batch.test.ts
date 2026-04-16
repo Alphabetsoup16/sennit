@@ -14,6 +14,17 @@ function stubHub(
   >,
 ): UpstreamHub {
   const hub = {
+    async callTool(
+      serverKey: string,
+      params: { name: string; arguments?: Record<string, unknown> },
+      options?: { signal?: AbortSignal },
+    ) {
+      const fn = impl[serverKey];
+      if (!fn) {
+        throw new Error(`unknown serverKey: ${serverKey}`);
+      }
+      return fn(params.name, params.arguments ?? {}, options);
+    },
     async ensureClient(key: string) {
       const fn = impl[key];
       if (!fn) return undefined;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { HostListChangedFanout } from "../src/aggregator/host-list-changed-bridge.js";
 import type { UpstreamHubConnectOptions } from "../src/aggregator/upstream-hub.js";
 import { UpstreamHub } from "../src/aggregator/upstream-hub.js";
 import { runDoctorInspect } from "../src/cli/inspect-upstreams.js";
@@ -7,6 +8,10 @@ import { sennitConfigSchema } from "../src/config/schema.js";
 import { distMockListToolsFailPath, distMockUpstreamPath } from "./cli-fixtures.js";
 
 class NeverFinishesConnectHub extends UpstreamHub {
+  constructor() {
+    super(new HostListChangedFanout());
+  }
+
   override async connect(
     _config: SennitConfig,
     _options?: UpstreamHubConnectOptions,

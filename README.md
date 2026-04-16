@@ -1,6 +1,6 @@
 # Sennit
 
-**Sennit is an MCP aggregator:** your editor or agent connects to **one** MCP server on stdio, and Sennit proxies **many** upstream MCP servers behind it. You get a single merged catalog—tools, prompts, and static resources—using predictable names like `serverKey__upstreamTool`.
+**Sennit is an MCP aggregator:** your editor or agent connects to **one** MCP server on stdio or Streamable HTTP, and Sennit proxies **many** upstream MCP servers behind it. You get a single merged catalog—tools, prompts, and static resources—using predictable names like `serverKey__upstreamTool`.
 
 **Why use it**
 
@@ -59,18 +59,29 @@ npx sennit setup --from /path/to/mcp.json   # or: npx sennit setup
 npx sennit onboard --config "$(npx sennit config path)"
 ```
 
-**Run the facade:**
+**Run the facade (stdio, default):**
 
 ```bash
 npx sennit serve
 npx sennit serve -c sennit.config.example.yaml
 ```
 
+**Run as Streamable HTTP gateway (for remote host/client setups):**
+
+```bash
+npx sennit serve --http-port 8123
+# MCP endpoint:   http://127.0.0.1:8123/mcp
+# Liveness check: http://127.0.0.1:8123/healthz
+# Readiness check:http://127.0.0.1:8123/ready
+```
+
+Use `--http-bearer <token>` to require `Authorization: Bearer <token>` and `--http-allowed-host` (repeatable) when binding externally.
+
 CLI inventory and flags: [`src/cli/commands/README.md`](src/cli/commands/README.md) (`plan`, `doctor`, `config`, `call`, …).
 
 ## Configuration
 
-Sennit reads YAML or JSON: **`version: 1`**, **`servers`** (**`stdio`**, **`streamableHttp`**, or legacy **`sse`**), optional allowlists (`tools`, `resources`, `resourceTemplates`, `prompts`), **`lazy`** / **`idleTimeoutMs`** / **`toolCallTimeoutMs`**, plus top-level **`roots`** (including optional **`mapByUpstream`** URI rewrites), **`toolsListDescriptionMaxChars`**, **`dynamicToolList`** / **`dynamicResourceList`** / **`dynamicPromptList`**, and **`batchCallMaxConcurrency`** for **`sennit.batch_call`**.
+Sennit reads YAML or JSON: **`version: 1`**, **`servers`** (**`stdio`**, **`streamableHttp`**, or legacy **`sse`**), optional allowlists (`tools`, `resources`, `resourceTemplates`, `prompts`), **`lazy`** / **`idleTimeoutMs`** / **`toolCallTimeoutMs`**, plus top-level **`roots`** (including optional **`mapByUpstream`** URI rewrites), **`toolsListDescriptionMaxChars`**, **`dynamicToolList`** / **`dynamicResourceList`** / **`dynamicPromptList`**, and **`batchCallMaxConcurrency`** for **`sennit.batch_call`** (must be positive when set).
 
 Resolution order: **`--config`** → **`SENNIT_CONFIG`** → **`./sennit.config.yaml`** / **`.yml`** → default user path from **`sennit config path`**. Set **`SENNIT_LOG=json`** for structured stderr lines on proxied tool calls.
 

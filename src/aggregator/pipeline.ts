@@ -22,12 +22,17 @@ import {
   registerProxiedTools,
 } from "./register-proxied-surface.js";
 import { registerProxyResources, resourceNamespacingSummary } from "./register-resources.js";
+import { registerAliasTools } from "./register-alias-tools.js";
 import type { UpstreamRootsBridge } from "./roots-bridge.js";
 import { makeUpstreamRootsBridge } from "./roots-bridge.js";
 import { makeUpstreamElicitationBridge } from "./elicitation-bridge.js";
 import { makeUpstreamSamplingBridge } from "./sampling-bridge.js";
-import { makeUpstreamHostListChangedBridge } from "./host-list-changed-bridge.js";
+import {
+  attachHostListChangedSubscriptions,
+  HostListChangedFanout,
+} from "./host-list-changed-bridge.js";
 import { UpstreamHub } from "./upstream-hub.js";
+import { runWithHostMcpAsync } from "../lib/active-host-mcp.js";
 
 const batchInputSchema = z.object({
   calls: z
@@ -50,6 +55,7 @@ type ListedPrompt = Awaited<ReturnType<Client["listPrompts"]>>["prompts"][number
 export type AggregatorHandle = {
   mcp: McpServer;
   close: () => Promise<void>;
+  detachHostListChanged?: () => void;
 };
 
 export function createMcpAndHub(config: SennitConfig): {
@@ -61,16 +67,11 @@ export function createMcpAndHub(config: SennitConfig): {
     { name: "sennit", version: VERSION },
     { capabilities: { tools: {}, prompts: {} } },
   );
-  const rootsBridge = makeUpstreamRootsBridge(config, mcp);
-  const samplingBridge = makeUpstreamSamplingBridge(mcp);
-  const elicitationBridge = makeUpstreamElicitationBridge(mcp);
-  const hostListChangedBridge = makeUpstreamHostListChangedBridge(mcp);
-  const hub = new UpstreamHub(
-    rootsBridge,
-    samplingBridge,
-    elicitationBridge,
-    hostListChangedBridge,
-  );
+  const rootsBridge = makeUpstreamRootsBridge(config);
+  const samplingBridge = makeUpstreamSamplingBridge();
+  const elicitationBridge = makeUpstreamElicitationBridge();
+  const listChangedFanout = new HostListChangedFanout();
+  const hub = new UpstreamHub(listChangedFanout, rootsBridge, samplingBridge, elicitationBridge);
   return { mcp, hub, rootsBridge };
 }
 
@@ -91,37 +92,43 @@ export async function registerAggregatorSurface(
       description:
         "Sennit metadata: version, configured upstream keys, tool naming rules, and roots policy.",
     },
-    async () => ({
-      content: [
-        {
-          type: "text",
-          text: jsonText({
-            schemaVersion: 1,
-            sennitVersion: VERSION,
-            upstreamServerKeys: hub.serverKeys(),
-            roots: config.roots,
-            namespacing: proxiedNamespacingRuleSummary(),
-            sampling:
-              "Upstream servers may call sampling/createMessage during proxied work; Sennit forwards to the host client when it declares the sampling capability (including sampling.tools for tool loops).",
-            toolsListDescriptionMaxChars: config.toolsListDescriptionMaxChars ?? null,
-            dynamicToolList: config.dynamicToolList ?? false,
-            dynamicResourceList: config.dynamicResourceList ?? false,
-            dynamicPromptList: config.dynamicPromptList ?? false,
-            batchCallMaxConcurrency: config.batchCallMaxConcurrency ?? null,
-            lazyAndIdle:
-              "servers.*.lazy skips spawn at connect until probe or a proxied call; servers.*.idleTimeoutMs closes the upstream client after idle (next call reconnects; merged catalog unchanged until host reconnects to Sennit).",
-            elicitation:
-              "Upstream servers may call elicitation/create during proxied work; Sennit forwards to the host client when it declares elicitation (form and/or url).",
-            resources: resourceNamespacingSummary(),
-            ...(config.roots.mode !== "ignore"
-              ? {
-                  hostRootsListError: rootsBridge?.lastHostRootsError ?? null,
-                }
-              : {}),
-          }),
-        },
-      ],
-    }),
+    async () =>
+      runWithHostMcpAsync(mcp, async () => ({
+        content: [
+          {
+            type: "text",
+            text: jsonText({
+              schemaVersion: 1,
+              sennitVersion: VERSION,
+              upstreamServerKeys: hub.serverKeys(),
+              upstreamRuntime: Object.fromEntries(
+                hub
+                  .serverKeys()
+                  .map((k) => [k, { circuit: hub.circuitState(k), telemetry: hub.telemetrySnapshot()[k] }]),
+              ),
+              roots: config.roots,
+              namespacing: proxiedNamespacingRuleSummary(),
+              sampling:
+                "Upstream servers may call sampling/createMessage during proxied work; Sennit forwards to the host client when it declares the sampling capability (including sampling.tools for tool loops).",
+              toolsListDescriptionMaxChars: config.toolsListDescriptionMaxChars ?? null,
+              dynamicToolList: config.dynamicToolList ?? false,
+              dynamicResourceList: config.dynamicResourceList ?? false,
+              dynamicPromptList: config.dynamicPromptList ?? false,
+              batchCallMaxConcurrency: config.batchCallMaxConcurrency ?? null,
+              lazyAndIdle:
+                "servers.*.lazy skips spawn at connect until probe or a proxied call; servers.*.idleTimeoutMs closes the upstream client after idle (next call reconnects; merged catalog unchanged until host reconnects to Sennit).",
+              elicitation:
+                "Upstream servers may call elicitation/create during proxied work; Sennit forwards to the host client when it declares elicitation (form and/or url).",
+              resources: resourceNamespacingSummary(),
+              ...(config.roots.mode !== "ignore"
+                ? {
+                    hostRootsListError: rootsBridge?.lastHostRootsError ?? null,
+                  }
+                : {}),
+            }),
+          },
+        ],
+      })),
   );
 
   mcp.registerTool(
@@ -130,28 +137,36 @@ export async function registerAggregatorSurface(
       description: `Run many upstream MCP tool calls in parallel (at most ${BATCH_CALL_MAX_ITEMS} calls per request). Use raw upstream toolName per serverKey (not the namespaced id).`,
       inputSchema: batchInputSchema,
     },
-    async (args) => {
-      const { calls } = batchInputSchema.parse(args);
-      const results = await executeBatchCall(hub, calls, {
-        maxConcurrency: config.batchCallMaxConcurrency,
-        toolCallTimeoutMsForServer: (sk) => config.servers[sk]?.toolCallTimeoutMs,
-      });
-      return {
-        content: [{ type: "text", text: jsonText(results) }],
-      };
-    },
+    async (args) =>
+      runWithHostMcpAsync(mcp, async () => {
+        const { calls } = batchInputSchema.parse(args);
+        const results = await executeBatchCall(hub, calls, {
+          maxConcurrency: config.batchCallMaxConcurrency,
+          toolCallTimeoutMsForServer: (sk) => config.servers[sk]?.toolCallTimeoutMs,
+        });
+        return {
+          content: [{ type: "text", text: jsonText(results) }],
+        };
+      }),
   );
 
   await registerProxiedTools(mcp, hub, config, upstreamToolCatalogs);
+  registerAliasTools(mcp, hub, config);
   await registerProxiedPrompts(mcp, hub, config, upstreamPromptCatalogs);
 
   await registerProxyResources(mcp, hub, config);
 }
 
-export function finalizeAggregatorHandle(mcp: McpServer, hub: UpstreamHub): AggregatorHandle {
+export function finalizeAggregatorHandle(
+  mcp: McpServer,
+  hub: UpstreamHub,
+  detachHostListChanged?: () => void,
+): AggregatorHandle {
   return {
     mcp,
+    detachHostListChanged,
     close: async () => {
+      detachHostListChanged?.();
       await mcp.close();
       await hub.close();
     },
@@ -162,16 +177,44 @@ export function finalizeAggregatorHandle(mcp: McpServer, hub: UpstreamHub): Aggr
  * Connect, probe upstreams, register surface. Used by `serve` and as a fallback when plan’s timed
  * connect phase fails.
  */
-export async function createAggregator(config: SennitConfig): Promise<AggregatorHandle> {
-  const { mcp, hub, rootsBridge } = createMcpAndHub(config);
+/** Shared upstream connect + probe; used by stdio {@link createAggregator} and HTTP gateway. */
+export async function connectAggregatedHub(config: SennitConfig): Promise<{
+  hub: UpstreamHub;
+  rootsBridge: UpstreamRootsBridge | undefined;
+  toolCatalogs: Array<{ serverKey: string; tools: ListedTool[] }>;
+  promptCatalogs: Array<{ serverKey: string; prompts: ListedPrompt[] }>;
+  inspect: DoctorInspectResult;
+}> {
+  const rootsBridge = makeUpstreamRootsBridge(config);
+  const samplingBridge = makeUpstreamSamplingBridge();
+  const elicitationBridge = makeUpstreamElicitationBridge();
+  const listChangedFanout = new HostListChangedFanout();
+  const hub = new UpstreamHub(listChangedFanout, rootsBridge, samplingBridge, elicitationBridge);
+  await hub.connect(config);
+  const rows = await probeConnectedHub(hub);
+  return {
+    hub,
+    rootsBridge,
+    toolCatalogs: toolCatalogsFromProbeRowsOrThrow(rows),
+    promptCatalogs: promptCatalogsFromProbeRowsOrThrow(rows),
+    inspect: doctorInspectResultFromProbeRows(rows),
+  };
+}
 
+export async function createAggregator(config: SennitConfig): Promise<AggregatorHandle> {
+  const { hub, rootsBridge, toolCatalogs, promptCatalogs } = await connectAggregatedHub(config);
+  const mcp = new McpServer(
+    { name: "sennit", version: VERSION },
+    { capabilities: { tools: {}, prompts: {} } },
+  );
   try {
-    await hub.connect(config);
-    const rows = await probeConnectedHub(hub);
-    const catalogs = toolCatalogsFromProbeRowsOrThrow(rows);
-    const promptCatalogs = promptCatalogsFromProbeRowsOrThrow(rows);
-    await registerAggregatorSurface(mcp, hub, config, catalogs, promptCatalogs, rootsBridge);
-    return finalizeAggregatorHandle(mcp, hub);
+    await registerAggregatorSurface(mcp, hub, config, toolCatalogs, promptCatalogs, rootsBridge);
+    const detachHostListChanged = attachHostListChangedSubscriptions(
+      mcp,
+      hub.listChangedFanout,
+      config,
+    );
+    return finalizeAggregatorHandle(mcp, hub, detachHostListChanged);
   } catch (e) {
     await hub.close().catch(() => undefined);
     await mcp.close().catch(() => undefined);
@@ -247,3 +290,5 @@ export async function connectAndProbeWithTimeout(
     };
   }
 }
+
+export { attachHostListChangedSubscriptions, HostListChangedFanout } from "./host-list-changed-bridge.js";

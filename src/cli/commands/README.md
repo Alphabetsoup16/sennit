@@ -7,7 +7,7 @@ Each module exports **`register*(program)`** or **`register*(parent)`**; wiring 
 | Command | Purpose | Flags |
 |---------|---------|-------|
 | **`version`** | Package + Node version | `--json` |
-| **`serve`** | Aggregator MCP on stdio | `-c` |
+| **`serve`** | Aggregator MCP on stdio (default) or Streamable HTTP gateway | `-c`, `--http-port`, `--http-host`, `--http-path`, `--http-health-path`, `--http-ready-path`, `--http-bearer`, `--http-allowed-host` |
 | **`plan`** | Dry-run: redacted config, per-upstream probe (**tools / prompts / resources**), merged catalog | `-c`, `--json`, `--timeout` |
 | **`doctor`** | Env, config validity, **`roots`** summary | `-c`, `--json` |
 | **`doctor inspect`** | Live probe per configured upstream (**`tools/list`**, **`prompts/list`** when advertised, **`resources/list`** when supported) | `-c`, `--json`, `--timeout` |
@@ -34,5 +34,9 @@ Shared strings: [`../cli-shared-options.ts`](../cli-shared-options.ts). JSON/hum
 | **`plan`** | Full merged catalog + redacted config; **`doctor inspect`** = per-upstream list counts/names only |
 | **`config`** | Split subcommands, not one overloaded command |
 | **Default path** | **`sennit config path`** only (not duplicated on **`setup`**) |
+
+`setup --from` imports host `mcpServers` entries for local stdio and URL-based remotes (`streamableHttp`; `transport: "sse"` maps to legacy SSE).
+
+`serve --http-port` enables Streamable HTTP mode; without it, `serve` stays stdio. In HTTP mode, use `--http-bearer` for token auth and `--http-allowed-host` (repeatable) when binding beyond localhost.
 
 **New command:** add **`register*.ts`**, import in **`register-commands.ts`**, mirror **`-c` / `--json` / `--timeout`** from **`cli-shared-options.ts`** when it fits.

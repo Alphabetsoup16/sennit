@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { getActiveHostMcp } from "../lib/active-host-mcp.js";
 import type { ElicitRequest, ElicitRequestFormParams, ElicitRequestURLParams, ElicitResult } from "@modelcontextprotocol/sdk/types.js";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { errorMessage } from "../lib/error-message.js";
@@ -11,9 +11,16 @@ export type UpstreamElicitationBridge = {
   forwardElicit: (params: ElicitRequest["params"]) => Promise<ElicitResult>;
 };
 
-export function makeUpstreamElicitationBridge(mcp: McpServer): UpstreamElicitationBridge {
+export function makeUpstreamElicitationBridge(): UpstreamElicitationBridge {
   return {
     forwardElicit: async (params) => {
+      const mcp = getActiveHostMcp();
+      if (!mcp) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          "No active host MCP session for elicitation (declare client capabilities.elicitation).",
+        );
+      }
       try {
         return await mcp.server.elicitInput(params as ElicitRequestFormParams | ElicitRequestURLParams);
       } catch (e) {

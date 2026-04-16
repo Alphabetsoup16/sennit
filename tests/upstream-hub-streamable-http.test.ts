@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { sennitConfigSchema } from "../src/config/schema.js";
+import { HostListChangedFanout } from "../src/aggregator/host-list-changed-bridge.js";
 import { UpstreamHub } from "../src/aggregator/upstream-hub.js";
 
 describe("UpstreamHub streamableHttp", () => {
@@ -37,7 +38,7 @@ describe("UpstreamHub streamableHttp", () => {
       server.on("error", reject);
     });
 
-    const hub = new UpstreamHub();
+    const hub = new UpstreamHub(new HostListChangedFanout());
     try {
       await hub.connect(
         sennitConfigSchema.parse({

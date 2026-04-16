@@ -33,9 +33,9 @@ flowchart TB
 | **`pipeline.ts`** | **`createMcpAndHub`**, **`registerAggregatorSurface`**, **`createAggregator`** wiring |
 | **`upstream-probe.ts`**, **`doctor-inspect-types.ts`** | Shared connect + list probes (plan / doctor inspect) |
 | **`upstream-hub.ts`** | **`StdioClientTransport`**, **`StreamableHTTPClientTransport`**, or **`SSEClientTransport`** + **`Client`**; **`ensureClient`** / **`touchActivity`**; bridge wiring |
-| **`sampling-bridge.ts`** | **`makeUpstreamSamplingBridge(mcp)`** → **`mcp.server.createMessage`** |
-| **`elicitation-bridge.ts`** | **`makeUpstreamElicitationBridge(mcp)`** → **`mcp.server.elicitInput`** |
-| **`host-list-changed-bridge.ts`** | Host **`send*ListChanged`** when **`dynamicToolList` / `dynamicResourceList` / `dynamicPromptList`** |
+| **`sampling-bridge.ts`** | **`makeUpstreamSamplingBridge()`**; resolves active host session and forwards to **`mcp.server.createMessage`** |
+| **`elicitation-bridge.ts`** | **`makeUpstreamElicitationBridge()`**; resolves active host session and forwards to **`mcp.server.elicitInput`** |
+| **`host-list-changed-bridge.ts`** | **`HostListChangedFanout`** + per-session subscriptions for **`send*ListChanged`** when **`dynamicToolList` / `dynamicResourceList` / `dynamicPromptList`** |
 | **`list-prompts.ts`**, **`prompt-args-from-listing.ts`** | Paginated **`prompts/list`** + Zod args for **`registerPrompt`** |
 | **`roots-policy.ts`** | **`applyRootsPolicy`**, **`applyUpstreamRootRewrites`** (**`mapByUpstream`**) |
 | **`roots-bridge.ts`** | Host **`listRoots`** → policy → upstream |
@@ -57,6 +57,7 @@ flowchart TB
 
 - **`tools/list`**, **`prompts/list`** (when the upstream advertises prompts), and **`resources/list`** (when supported) run **in parallel** across connected clients during catalog build.
 - The merged catalog is **fixed for the Sennit session** after registration (no hot reload on the host). **`dynamicToolList`** only tells the host that upstream lists may have changed; reconnect to Sennit to pick up new registrations.
+- In HTTP gateway mode, Sennit keeps one shared upstream hub and creates a per-client MCP session/transport, while list-changed notifications fan out to all subscribed host sessions.
 - **`inputSchema`:** common **`object`/`properties`** maps to strict Zod; otherwise a permissive object schema.
 
 **New transport:** extend the discriminated **`servers`** entry in config, then branch in **`upstream-hub.ts`** ([docs/EXTENDING.md](../../docs/EXTENDING.md)).

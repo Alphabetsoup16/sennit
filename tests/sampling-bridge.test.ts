@@ -4,6 +4,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { CreateMessageRequestSchema, ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { makeUpstreamSamplingBridge } from "../src/aggregator/sampling-bridge.js";
+import { runWithHostMcpAsync } from "../src/lib/active-host-mcp.js";
 import { VERSION } from "../src/lib/version.js";
 
 describe("makeUpstreamSamplingBridge", () => {
@@ -13,7 +14,7 @@ describe("makeUpstreamSamplingBridge", () => {
       { name: "test-facade", version: VERSION },
       { capabilities: { tools: {} } },
     );
-    const bridge = makeUpstreamSamplingBridge(mcp);
+    const bridge = makeUpstreamSamplingBridge();
 
     const hostClient = new Client(
       { name: "host", version: "1.0.0" },
@@ -29,10 +30,12 @@ describe("makeUpstreamSamplingBridge", () => {
     await mcp.connect(serverSide);
     await hostClient.connect(clientSide);
     try {
-      const out = await bridge.forwardCreateMessage({
-        messages: [{ role: "user", content: { type: "text", text: "hi" } }],
-        maxTokens: 42,
-      });
+      const out = await runWithHostMcpAsync(mcp, () =>
+        bridge.forwardCreateMessage({
+          messages: [{ role: "user", content: { type: "text", text: "hi" } }],
+          maxTokens: 42,
+        }),
+      );
       expect(out).toMatchObject({
         role: "assistant",
         model: "test-model",
@@ -51,17 +54,19 @@ describe("makeUpstreamSamplingBridge", () => {
       { name: "test-facade", version: VERSION },
       { capabilities: { tools: {} } },
     );
-    const bridge = makeUpstreamSamplingBridge(mcp);
+    const bridge = makeUpstreamSamplingBridge();
 
     const hostClient = new Client({ name: "host", version: "1.0.0" }, { capabilities: {} });
     await mcp.connect(serverSide);
     await hostClient.connect(clientSide);
     try {
       await expect(
-        bridge.forwardCreateMessage({
-          messages: [{ role: "user", content: { type: "text", text: "hi" } }],
-          maxTokens: 10,
-        }),
+        runWithHostMcpAsync(mcp, () =>
+          bridge.forwardCreateMessage({
+            messages: [{ role: "user", content: { type: "text", text: "hi" } }],
+            maxTokens: 10,
+          }),
+        ),
       ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
     } finally {
       await hostClient.close();
@@ -74,16 +79,18 @@ describe("makeUpstreamSamplingBridge", () => {
       { name: "test-facade", version: VERSION },
       { capabilities: { tools: {} } },
     );
-    const bridge = makeUpstreamSamplingBridge(mcp);
+    const bridge = makeUpstreamSamplingBridge();
     const spy = vi.spyOn(mcp.server, "createMessage").mockRejectedValue(
       new McpError(ErrorCode.MethodNotFound, "custom-reason"),
     );
     try {
       await expect(
-        bridge.forwardCreateMessage({
-          messages: [{ role: "user", content: { type: "text", text: "hi" } }],
-          maxTokens: 10,
-        }),
+        runWithHostMcpAsync(mcp, () =>
+          bridge.forwardCreateMessage({
+            messages: [{ role: "user", content: { type: "text", text: "hi" } }],
+            maxTokens: 10,
+          }),
+        ),
       ).rejects.toMatchObject({ code: ErrorCode.InvalidParams });
     } finally {
       spy.mockRestore();

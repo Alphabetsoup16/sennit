@@ -3,6 +3,8 @@
  * Implementation lives in {@link ./pipeline.js}.
  */
 export {
+  attachHostListChangedSubscriptions,
+  connectAggregatedHub,
   connectAndProbeWithTimeout,
   createAggregator,
   createMcpAndHub,

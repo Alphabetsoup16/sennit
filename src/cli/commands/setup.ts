@@ -6,16 +6,16 @@ import type { SennitConfig } from "../../config/schema.js";
 import { sennitConfigSchema } from "../../config/schema.js";
 import { errorMessage } from "../../lib/error-message.js";
 import { EMPTY_CONFIG } from "../load-config.js";
-import { importStdioServersFromHostMcpJson } from "../import-host-mcp.js";
+import { importServersFromHostMcpJson } from "../import-host-mcp.js";
 import { defaultUserSennitConfigFile } from "../user-sennit-paths.js";
 
 export function registerSetup(program: Command): void {
   program
     .command("setup")
     .description(
-      "Create per-user config and/or import stdio upstreams from a host mcp.json (Cursor-style)",
+      "Create per-user config and/or import upstreams from a host mcp.json (Cursor-style)",
     )
-    .option("--from <path>", "Import mcpServers from host JSON (stdio entries only)")
+    .option("--from <path>", "Import mcpServers from host JSON (stdio + streamableHttp/sse)")
     .option("-o, --output <path>", "Write config here (default: per-user config.yaml)")
     .option("-f, --force", "Overwrite output if it already exists")
     .action(
@@ -45,14 +45,14 @@ export function registerSetup(program: Command): void {
             process.exitCode = 1;
             return;
           }
-          const { servers, skipped } = importStdioServersFromHostMcpJson(parsed);
+          const { servers, skipped } = importServersFromHostMcpJson(parsed);
           for (const s of skipped) {
             notes.push(`  skipped "${s.key}": ${s.reason}`);
           }
           if (Object.keys(servers).length === 0) {
             process.stderr.write(
-              `No stdio servers imported from ${opts.from}. ` +
-                `Host files must use { "mcpServers": { "name": { "command", "args?" } } }.\n`,
+              `No servers imported from ${opts.from}. ` +
+                `Host files must use { "mcpServers": { "name": { "command" | "url", ... } } }.\n`,
             );
             if (notes.length > 0) {
               process.stderr.write(`Details:\n${notes.join("\n")}\n`);
@@ -65,7 +65,7 @@ export function registerSetup(program: Command): void {
 
         mkdirSync(dirname(outPath), { recursive: true });
         const body =
-          "# Sennit — upstream MCP servers (stdio). See https://github.com/Alphabetsoup16/sennit\n" +
+          "# Sennit — upstream MCP servers (stdio/streamableHttp/sse). See https://github.com/Alphabetsoup16/sennit\n" +
           YAML.stringify(config, { indent: 2 });
         writeFileSync(outPath, body, "utf8");
 

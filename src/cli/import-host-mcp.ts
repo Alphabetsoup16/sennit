@@ -1,4 +1,4 @@
-import type { StdioServerConfig } from "../config/schema.js";
+import type { ServerEntryConfig, StdioServerConfig } from "../config/schema.js";
 
 export type ImportHostMcpSkip = { key: string; reason: string };
 
@@ -6,6 +6,20 @@ export type ImportHostMcpSkip = { key: string; reason: string };
 export function importStdioServersFromHostMcpJson(
   data: unknown,
 ): { servers: Record<string, StdioServerConfig>; skipped: ImportHostMcpSkip[] } {
+  const imported = importServersFromHostMcpJson(data);
+  const servers: Record<string, StdioServerConfig> = {};
+  for (const [key, server] of Object.entries(imported.servers)) {
+    if (server.transport === "stdio") {
+      servers[key] = server;
+    }
+  }
+  return { servers, skipped: imported.skipped };
+}
+
+/** Cursor-style host MCP file: `{ "mcpServers": { "name": { command? | url?, ... } } }`. */
+export function importServersFromHostMcpJson(
+  data: unknown,
+): { servers: Record<string, ServerEntryConfig>; skipped: ImportHostMcpSkip[] } {
   const skipped: ImportHostMcpSkip[] = [];
   if (!data || typeof data !== "object") {
     skipped.push({ key: "(root)", reason: "not a JSON object" });
@@ -18,7 +32,7 @@ export function importStdioServersFromHostMcpJson(
     return { servers: {}, skipped };
   }
 
-  const servers: Record<string, StdioServerConfig> = {};
+  const servers: Record<string, ServerEntryConfig> = {};
 
   for (const [key, entry] of Object.entries(raw as Record<string, unknown>)) {
     if (!entry || typeof entry !== "object") {
@@ -26,16 +40,34 @@ export function importStdioServersFromHostMcpJson(
       continue;
     }
     const e = entry as Record<string, unknown>;
-    const command = e.command;
-    if (typeof command !== "string" || command.length === 0) {
-      skipped.push({ key, reason: "no command (stdio only)" });
-      continue;
-    }
-    if (typeof e.url === "string" && e.url.length > 0) {
-      skipped.push({ key, reason: "has url (remote/SSE — not stdio)" });
+    const url = typeof e.url === "string" && e.url.length > 0 ? e.url : undefined;
+    const transport = typeof e.transport === "string" ? e.transport : undefined;
+    if (url) {
+      const headers = normalizeEnv(e.headers);
+      const timeout = asPositiveInt(e.httpRequestTimeoutMs);
+      if (transport === "sse") {
+        servers[key] = {
+          transport: "sse",
+          url,
+          ...(headers ? { headers } : {}),
+          ...(timeout !== undefined ? { httpRequestTimeoutMs: timeout } : {}),
+        };
+      } else {
+        servers[key] = {
+          transport: "streamableHttp",
+          url,
+          ...(headers ? { headers } : {}),
+          ...(timeout !== undefined ? { httpRequestTimeoutMs: timeout } : {}),
+        };
+      }
       continue;
     }
 
+    const command = e.command;
+    if (typeof command !== "string" || command.length === 0) {
+      skipped.push({ key, reason: "no command or url" });
+      continue;
+    }
     const args = normalizeStringArray(e.args);
     if (looksLikeSennitServe(command, args)) {
       skipped.push({ key, reason: "looks like Sennit itself (avoid nesting)" });
@@ -55,6 +87,14 @@ export function importStdioServersFromHostMcpJson(
   }
 
   return { servers, skipped };
+}
+
+function asPositiveInt(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  const n = Math.trunc(value);
+  return n > 0 ? n : undefined;
 }
 
 function normalizeStringArray(value: unknown): string[] {

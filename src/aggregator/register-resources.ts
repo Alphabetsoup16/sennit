@@ -1,5 +1,6 @@
 import { ResourceTemplate, type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { SennitConfig } from "../config/schema.js";
+import { runWithHostMcpAsync } from "../lib/active-host-mcp.js";
 import { errorMessage } from "../lib/error-message.js";
 import { namespacedToolName, TOOL_NAMESPACE_SEPARATOR } from "../lib/namespace.js";
 import {
@@ -145,26 +146,27 @@ export async function registerProxyResources(
         mimeType: row.mimeType,
         title: row.title,
       },
-      async () => {
-        const c = await hub.ensureClient(row.serverKey);
-        if (!c) {
-          throw new Error(`upstream missing: ${row.serverKey}`);
-        }
-        try {
-          const result = await c.readResource({ uri: row.upstreamUri });
-          hub.touchActivity(row.serverKey);
-          return {
-            contents: result.contents.map((item) => ({
-              ...item,
-              uri: row.facadeUri,
-            })),
-            _meta: result._meta,
-          };
-        } catch (e) {
-          const msg = errorMessage(e);
-          throw new Error(msg, { cause: e });
-        }
-      },
+      async () =>
+        runWithHostMcpAsync(mcp, async () => {
+          const c = await hub.ensureClient(row.serverKey);
+          if (!c) {
+            throw new Error(`upstream missing: ${row.serverKey}`);
+          }
+          try {
+            const result = await c.readResource({ uri: row.upstreamUri });
+            hub.touchActivity(row.serverKey);
+            return {
+              contents: result.contents.map((item) => ({
+                ...item,
+                uri: row.facadeUri,
+              })),
+              _meta: result._meta,
+            };
+          } catch (e) {
+            const msg = errorMessage(e);
+            throw new Error(msg, { cause: e });
+          }
+        }),
     );
   }
 
@@ -179,33 +181,34 @@ export async function registerProxyResources(
         mimeType: row.mimeType,
         title: row.title,
       },
-      async (uri, variables) => {
-        const u = variables[FACADE_RESOURCE_TEMPLATE_URI_VARIABLE];
-        if (typeof u !== "string") {
-          throw new Error(
-            `missing or invalid resource template variable ${FACADE_RESOURCE_TEMPLATE_URI_VARIABLE}`,
-          );
-        }
-        const c = await hub.ensureClient(row.serverKey);
-        if (!c) {
-          throw new Error(`upstream missing: ${row.serverKey}`);
-        }
-        const facadeExpanded = uri.toString();
-        try {
-          const result = await c.readResource({ uri: u });
-          hub.touchActivity(row.serverKey);
-          return {
-            contents: result.contents.map((item) => ({
-              ...item,
-              uri: facadeExpanded,
-            })),
-            _meta: result._meta,
-          };
-        } catch (e) {
-          const msg = errorMessage(e);
-          throw new Error(msg, { cause: e });
-        }
-      },
+      async (uri, variables) =>
+        runWithHostMcpAsync(mcp, async () => {
+          const u = variables[FACADE_RESOURCE_TEMPLATE_URI_VARIABLE];
+          if (typeof u !== "string") {
+            throw new Error(
+              `missing or invalid resource template variable ${FACADE_RESOURCE_TEMPLATE_URI_VARIABLE}`,
+            );
+          }
+          const c = await hub.ensureClient(row.serverKey);
+          if (!c) {
+            throw new Error(`upstream missing: ${row.serverKey}`);
+          }
+          const facadeExpanded = uri.toString();
+          try {
+            const result = await c.readResource({ uri: u });
+            hub.touchActivity(row.serverKey);
+            return {
+              contents: result.contents.map((item) => ({
+                ...item,
+                uri: facadeExpanded,
+              })),
+              _meta: result._meta,
+            };
+          } catch (e) {
+            const msg = errorMessage(e);
+            throw new Error(msg, { cause: e });
+          }
+        }),
     );
   }
 }

@@ -1,5 +1,6 @@
 import type { DoctorInspectResult } from "../aggregator/doctor-inspect-types.js";
 import { doctorInspectResultFromProbeRows, probeConnectedHub } from "../aggregator/upstream-probe.js";
+import { HostListChangedFanout } from "../aggregator/host-list-changed-bridge.js";
 import { UpstreamHub } from "../aggregator/upstream-hub.js";
 import type { SennitConfig } from "../config/schema.js";
 import { errorMessage } from "../lib/error-message.js";
@@ -22,7 +23,7 @@ export async function runDoctorInspect(
   timeoutMs: number,
   options?: RunDoctorInspectOptions,
 ): Promise<DoctorInspectResult> {
-  const hub = options?.hub ?? new UpstreamHub();
+  const hub = options?.hub ?? new UpstreamHub(new HostListChangedFanout());
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const ac = new AbortController();
 

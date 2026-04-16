@@ -1,4 +1,3 @@
-import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { errorMessage } from "../lib/error-message.js";
 import { withAbortTimeout } from "../lib/with-timeout.js";
 import type { UpstreamHub } from "./upstream-hub.js";
@@ -22,7 +21,7 @@ export type ExecuteBatchCallOptions = {
 };
 
 async function callToolForBatchItem(
-  client: Client,
+  hub: UpstreamHub,
   item: BatchCallItem,
   opts: { timeoutMs?: number; batchSignal?: AbortSignal },
 ): Promise<unknown> {
@@ -33,11 +32,11 @@ async function callToolForBatchItem(
   if (opts.timeoutMs !== undefined) {
     return withAbortTimeout(
       opts.timeoutMs,
-      (signal) => client.callTool(params, undefined, { signal }),
+      (signal) => hub.callTool(item.serverKey, params, { signal }),
       opts.batchSignal,
     );
   }
-  return client.callTool(params, undefined, { signal: opts.batchSignal });
+  return hub.callTool(item.serverKey, params, { signal: opts.batchSignal });
 }
 
 async function mapWithConcurrency<T, R>(
@@ -74,15 +73,7 @@ export async function executeBatchCall(
 
   return mapWithConcurrency(calls, maxConcurrency, async (item): Promise<BatchCallResultItem> => {
     try {
-      const client = await hub.ensureClient(item.serverKey);
-      if (!client) {
-        return {
-          clientCallId: item.clientCallId,
-          ok: false,
-          error: `unknown serverKey: ${item.serverKey}`,
-        };
-      }
-      const result = await callToolForBatchItem(client, item, {
+      const result = await callToolForBatchItem(hub, item, {
         timeoutMs: timeoutFor?.(item.serverKey),
         batchSignal: options?.signal,
       });
